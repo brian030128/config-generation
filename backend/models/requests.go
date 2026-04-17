@@ -68,3 +68,22 @@ type EditRolePermissionsRequest struct {
 type AssignUserRoleRequest struct {
 	UserID int64 `json:"user_id"`
 }
+
+type RegisterRequest struct {
+	Username    string  `json:"username"`
+	Password    string  `json:"password"`
+	DisplayName *string `json:"display_name"`
+}
+
+type LoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+type CreatePullRequestRequest struct {
+	Title            string  `json:"title"`
+	Description      *string `json:"description"`
+	ObjectType       string  `json:"object_type"`
+	GlobalValuesName *string `json:"global_values_name"`
+	ProposedPayload  string  `json:"proposed_payload"`
+}

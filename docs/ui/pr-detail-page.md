@@ -1,6 +1,6 @@
 # Pull Request Detail Page
 
-**Route:** `/projects/:projectName/prs/:prId`
+**Route:** `/pull-requests/:id`
 
 The page for viewing, reviewing, and managing a single pull request.
 

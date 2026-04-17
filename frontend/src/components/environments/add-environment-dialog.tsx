@@ -1,6 +1,5 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { useEnvironments } from "@/hooks/use-environments"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -10,13 +9,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Input } from "@/components/ui/input"
 import { Plus } from "lucide-react"
 
 export function AddEnvironmentDialog({
@@ -25,16 +18,15 @@ export function AddEnvironmentDialog({
   projectName: string
 }) {
   const [open, setOpen] = useState(false)
-  const [selectedEnv, setSelectedEnv] = useState("")
-  const { data } = useEnvironments()
+  const [envName, setEnvName] = useState("")
   const navigate = useNavigate()
 
-  const environments = data?.items ?? []
+  const trimmed = envName.trim()
 
-  function handleAdd() {
-    if (!selectedEnv) return
+  function handleContinue() {
+    if (!trimmed) return
     setOpen(false)
-    navigate(`/projects/${projectName}/env/${selectedEnv}`)
+    navigate(`/projects/${projectName}/env/${trimmed}`)
   }
 
   return (
@@ -51,25 +43,21 @@ export function AddEnvironmentDialog({
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>Environment</Label>
-            <Select value={selectedEnv} onValueChange={setSelectedEnv}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select an environment" />
-              </SelectTrigger>
-              <SelectContent>
-                {environments.map((env) => (
-                  <SelectItem key={env.id} value={env.name}>
-                    {env.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label>Environment Name</Label>
+            <Input
+              value={envName}
+              onChange={(e) => setEnvName(e.target.value)}
+              placeholder="e.g. staging, production"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleContinue()
+              }}
+            />
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleAdd} disabled={!selectedEnv}>
+            <Button onClick={handleContinue} disabled={!trimmed}>
               Continue
             </Button>
           </div>

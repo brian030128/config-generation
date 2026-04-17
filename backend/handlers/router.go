@@ -10,8 +10,12 @@ import (
 func NewRouter(db *sql.DB, jwtSecret []byte) chi.Router {
 	r := chi.NewRouter()
 
-	// Global middleware: all routes require JWT auth.
-	r.Use(middleware.JWTAuth(jwtSecret))
+	// Public routes: no JWT required.
+	auth := &AuthHandler{DB: db, JWTSecret: jwtSecret}
+	r.Route("/api/auth", func(r chi.Router) {
+		r.Post("/register", auth.Register)
+		r.Post("/login", auth.Login)
+	})
 
 	proj := &ProjectHandler{DB: db}
 	env := &EnvironmentHandler{DB: db}
@@ -19,11 +23,16 @@ func NewRouter(db *sql.DB, jwtSecret []byte) chi.Router {
 	vals := &ValuesHandler{DB: db}
 	gv := &GlobalValuesHandler{DB: db}
 	role := &RoleHandler{DB: db}
+	pr := &PullRequestHandler{DB: db}
 
 	perm := middleware.RequirePermission
 	param := middleware.URLParam
 
-	r.Route("/api", func(r chi.Router) {
+	// Protected routes: JWT required.
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.JWTAuth(jwtSecret))
+
+		r.Route("/api", func(r chi.Router) {
 
 		// --- Projects ---
 		r.Route("/projects", func(r chi.Router) {
@@ -46,6 +55,8 @@ func NewRouter(db *sql.DB, jwtSecret []byte) chi.Router {
 					r.Route("/{templateName}", func(r chi.Router) {
 						r.With(perm(db, "read", "project_templates", param("projectName"), nil, nil)).
 							Get("/", tmpl.GetLatest)
+						r.With(perm(db, "read", "project_templates", param("projectName"), nil, nil)).
+							Get("/variables", tmpl.Variables)
 
 						r.Route("/versions", func(r chi.Router) {
 							r.With(perm(db, "read", "project_templates", param("projectName"), nil, nil)).
@@ -118,6 +129,14 @@ func NewRouter(db *sql.DB, jwtSecret []byte) chi.Router {
 			})
 		})
 
+		// --- Pull Requests ---
+		r.Route("/pull-requests", func(r chi.Router) {
+			r.Post("/", pr.Create)
+			r.Get("/", pr.List)
+			r.Get("/{prID}", pr.Get)
+			r.Post("/{prID}/close", pr.Close)
+		})
+
 		// --- Roles (non-project-scoped operations by role ID) ---
 		// Permission checks happen inside handlers since we need to look up the role's project first.
 		r.Route("/roles/{roleID}", func(r chi.Router) {
@@ -125,6 +144,8 @@ func NewRouter(db *sql.DB, jwtSecret []byte) chi.Router {
 			r.Delete("/", role.Delete)
 			r.Post("/members", role.AssignUser)
 			r.Delete("/members/{userID}", role.RemoveUser)
+		})
+
 		})
 	})
 

@@ -120,6 +120,15 @@ func Static(val string) KeyExtractor {
 // RequirePermission returns middleware that checks the authenticated user holds
 // the specified permission. Key values are resolved at request time via extractors.
 // Pass nil for key extractors that are not applicable for the resource.
+func isSuperuser(ctx context.Context, db *sql.DB, userID int64) (bool, error) {
+	var su bool
+	err := db.QueryRowContext(ctx, "SELECT superuser FROM users WHERE id = $1", userID).Scan(&su)
+	if err != nil {
+		return false, err
+	}
+	return su, nil
+}
+
 func RequirePermission(
 	db *sql.DB,
 	action string,
@@ -131,6 +140,16 @@ func RequirePermission(
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user := UserFromContext(r.Context())
+
+			su, err := isSuperuser(r.Context(), db, user.UserID)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to check user", "internal")
+				return
+			}
+			if su {
+				next.ServeHTTP(w, r)
+				return
+			}
 
 			perms, err := loadEffectivePermissions(r.Context(), db, user.UserID)
 			if err != nil {
@@ -165,6 +184,14 @@ func RequirePermission(
 // CheckPermission is a helper for handlers that need to check permissions
 // programmatically (e.g., role handlers that must look up the project first).
 func CheckPermission(ctx context.Context, db *sql.DB, userID int64, req models.PermissionRequirement) (bool, error) {
+	su, err := isSuperuser(ctx, db, userID)
+	if err != nil {
+		return false, err
+	}
+	if su {
+		return true, nil
+	}
+
 	perms, err := loadEffectivePermissions(ctx, db, userID)
 	if err != nil {
 		return false, err

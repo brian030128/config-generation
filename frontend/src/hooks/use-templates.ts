@@ -22,6 +22,14 @@ export function useTemplates(projectName: string) {
   })
 }
 
+export function useTemplateVariables(projectName: string, templateName: string) {
+  return useQuery({
+    queryKey: [...templateKeys.detail(projectName, templateName), "variables"] as const,
+    queryFn: () => templatesApi.getVariables(projectName, templateName),
+    enabled: !!templateName,
+  })
+}
+
 export function useTemplate(projectName: string, templateName: string) {
   return useQuery({
     queryKey: templateKeys.detail(projectName, templateName),

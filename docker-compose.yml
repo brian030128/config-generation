@@ -36,6 +36,8 @@ services:
     environment:
       DATABASE_URL: postgres://configgen:configgen@db:5432/configgen?sslmode=disable
       JWT_SECRET: dev-secret-change-in-production
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: admin
     ports:
       - "8080:8080"
 

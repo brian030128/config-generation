@@ -2,9 +2,13 @@ package handlers
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 	"strconv"
+	"text/template"
+	"text/template/parse"
 
+	"github.com/Masterminds/sprig/v3"
 	"github.com/brian/config-generation/backend/models"
 	"github.com/go-chi/chi/v5"
 )
@@ -303,4 +307,164 @@ func (h *TemplateHandler) ListVersions(w http.ResponseWriter, r *http.Request) {
 		versions = []models.ProjectConfigTemplate{}
 	}
 	writeJSON(w, http.StatusOK, models.ListResponse[models.ProjectConfigTemplate]{Items: versions, Count: len(versions)})
+}
+
+// Variables extracts template variables (and their defaults) from the latest template body.
+func (h *TemplateHandler) Variables(w http.ResponseWriter, r *http.Request) {
+	projectID, err := resolveProjectID(r, h.DB)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+
+	templateName := chi.URLParam(r, "templateName")
+
+	var body string
+	err = h.DB.QueryRowContext(r.Context(), `
+		SELECT body FROM project_config_templates
+		WHERE project_id = $1 AND template_name = $2
+		ORDER BY version_id DESC LIMIT 1
+	`, projectID, templateName).Scan(&body)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "template not found", "not_found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+
+	vars, err := extractTemplateVariables(body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("failed to parse template: %v", err), "parse_error")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, models.TemplateVariablesResponse{Variables: vars})
+}
+
+// extractTemplateVariables parses a Go template body with Sprig functions and
+// walks the AST to find top-level field references ({{ .name }}) and their
+// default values ({{ .name | default "value" }}).
+func extractTemplateVariables(body string) ([]models.TemplateVariable, error) {
+	tmpl, err := template.New("").Funcs(sprig.TxtFuncMap()).Parse(body)
+	if err != nil {
+		return nil, err
+	}
+
+	seen := map[string]*models.TemplateVariable{}
+	var order []string
+
+	for _, node := range tmpl.Root.Nodes {
+		walkNode(node, seen, &order)
+	}
+
+	vars := make([]models.TemplateVariable, 0, len(order))
+	for _, name := range order {
+		vars = append(vars, *seen[name])
+	}
+	return vars, nil
+}
+
+func walkNode(node parse.Node, seen map[string]*models.TemplateVariable, order *[]string) {
+	switch n := node.(type) {
+	case *parse.ActionNode:
+		extractFromPipe(n.Pipe, seen, order)
+	case *parse.IfNode:
+		extractFromPipe(n.Pipe, seen, order)
+		if n.List != nil {
+			for _, child := range n.List.Nodes {
+				walkNode(child, seen, order)
+			}
+		}
+		if n.ElseList != nil {
+			for _, child := range n.ElseList.Nodes {
+				walkNode(child, seen, order)
+			}
+		}
+	case *parse.RangeNode:
+		extractFromPipe(n.Pipe, seen, order)
+		if n.List != nil {
+			for _, child := range n.List.Nodes {
+				walkNode(child, seen, order)
+			}
+		}
+		if n.ElseList != nil {
+			for _, child := range n.ElseList.Nodes {
+				walkNode(child, seen, order)
+			}
+		}
+	case *parse.WithNode:
+		extractFromPipe(n.Pipe, seen, order)
+		if n.List != nil {
+			for _, child := range n.List.Nodes {
+				walkNode(child, seen, order)
+			}
+		}
+		if n.ElseList != nil {
+			for _, child := range n.ElseList.Nodes {
+				walkNode(child, seen, order)
+			}
+		}
+	case *parse.ListNode:
+		if n != nil {
+			for _, child := range n.Nodes {
+				walkNode(child, seen, order)
+			}
+		}
+	}
+}
+
+func extractFromPipe(pipe *parse.PipeNode, seen map[string]*models.TemplateVariable, order *[]string) {
+	if pipe == nil {
+		return
+	}
+
+	var fieldName string
+	var defaultVal *string
+
+	for _, cmd := range pipe.Cmds {
+		for _, arg := range cmd.Args {
+			if field, ok := arg.(*parse.FieldNode); ok {
+				if len(field.Ident) > 0 {
+					fieldName = field.Ident[0]
+				}
+			}
+		}
+		// Check for default function: default "value" or default 123
+		if len(cmd.Args) >= 2 {
+			if ident, ok := cmd.Args[0].(*parse.IdentifierNode); ok && ident.Ident == "default" {
+				val := extractLiteral(cmd.Args[1])
+				if val != "" {
+					defaultVal = &val
+				}
+			}
+		}
+	}
+
+	if fieldName != "" {
+		if _, exists := seen[fieldName]; !exists {
+			seen[fieldName] = &models.TemplateVariable{Name: fieldName, Default: defaultVal}
+			*order = append(*order, fieldName)
+		}
+	}
+}
+
+func extractLiteral(node parse.Node) string {
+	switch n := node.(type) {
+	case *parse.StringNode:
+		return n.Text
+	case *parse.NumberNode:
+		return n.Text
+	case *parse.BoolNode:
+		if n.True {
+			return "true"
+		}
+		return "false"
+	}
+	return ""
 }

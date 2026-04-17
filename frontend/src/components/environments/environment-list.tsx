@@ -26,14 +26,11 @@ export function EnvironmentList({
     })),
   })
 
-  // Filter to only environments that have at least one value set for this project
-  const envsWithValues = environments
-    .map((env, i) => ({
-      env,
-      valuesCount: valueQueries[i]?.data?.count ?? 0,
-      isLoading: valueQueries[i]?.isLoading ?? true,
-    }))
-    .filter((e) => e.valuesCount > 0 || e.isLoading)
+  const envsWithStatus = environments.map((env, i) => ({
+    env,
+    valuesCount: valueQueries[i]?.data?.count ?? 0,
+    isLoading: valueQueries[i]?.isLoading ?? true,
+  }))
 
   return (
     <div className="space-y-4">
@@ -48,14 +45,14 @@ export function EnvironmentList({
         </p>
       )}
 
-      {!envsLoading && envsWithValues.length === 0 && (
+      {!envsLoading && envsWithStatus.length === 0 && (
         <p className="text-sm text-muted-foreground">
           No environments configured yet. Add one to start defining values.
         </p>
       )}
 
       <div className="space-y-2">
-        {envsWithValues.map(({ env, valuesCount, isLoading }) => (
+        {envsWithStatus.map(({ env, valuesCount, isLoading }) => (
           <Link
             key={env.id}
             to={`/projects/${projectName}/env/${env.name}`}

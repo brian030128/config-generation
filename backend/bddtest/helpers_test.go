@@ -150,3 +150,33 @@ func createGlobalValues(userID int64, username, name string, payload map[string]
 	Expect(rec.Code).To(Equal(http.StatusCreated))
 	return decode[map[string]any](rec)
 }
+
+func seedTemplateWritePermission(userID int64, projectName string) {
+	var roleID int64
+	roleName := fmt.Sprintf("tmpl_writer_%s_%d", projectName, userID)
+	err := testDB.QueryRowContext(context.Background(),
+		`INSERT INTO roles (name, is_auto_created) VALUES ($1, false) RETURNING id`,
+		roleName,
+	).Scan(&roleID)
+	Expect(err).NotTo(HaveOccurred())
+
+	_, err = testDB.ExecContext(context.Background(),
+		`INSERT INTO role_permissions (role_id, action, resource, key_project) VALUES ($1, 'write', 'project_templates', $2)`,
+		roleID, projectName,
+	)
+	Expect(err).NotTo(HaveOccurred())
+
+	_, err = testDB.ExecContext(context.Background(),
+		`INSERT INTO user_roles (user_id, role_id, granted_by) VALUES ($1, $2, $1)`,
+		userID, roleID,
+	)
+	Expect(err).NotTo(HaveOccurred())
+}
+
+func appendTemplateVersion(userID int64, username, projectName, templateName, body string) map[string]any {
+	rec := doRequest("POST", "/api/projects/"+projectName+"/templates/"+templateName+"/versions", map[string]any{
+		"body": body,
+	}, userID, username)
+	Expect(rec.Code).To(Equal(http.StatusCreated))
+	return decode[map[string]any](rec)
+}

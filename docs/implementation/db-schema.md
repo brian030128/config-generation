@@ -38,6 +38,8 @@ All timestamps are stored as `TIMESTAMPTZ`. All primary keys use `BIGINT` auto-i
 | `id` | `BIGINT` | PK, auto-increment |
 | `username` | `TEXT` | UNIQUE, NOT NULL |
 | `display_name` | `TEXT` | |
+| `password_hash` | `TEXT` | NOT NULL, DEFAULT `''` |
+| `superuser` | `BOOLEAN` | NOT NULL, DEFAULT `false` |
 | `created_at` | `TIMESTAMPTZ` | NOT NULL, DEFAULT now() |
 
 ---

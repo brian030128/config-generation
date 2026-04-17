@@ -134,3 +134,50 @@ export interface AppendGlobalValuesVersionRequest {
   payload: Record<string, string | number | boolean | null>
   commit_message?: string
 }
+
+// Pull Requests
+export interface PullRequest {
+  id: number
+  project_id: number | null
+  author_id: number
+  title: string
+  description: string | null
+  status: "draft" | "open" | "approved" | "merged" | "closed"
+  is_conflicted: boolean
+  created_at: string
+  updated_at: string
+  merged_at: string | null
+  closed_at: string | null
+  changes?: PRChange[]
+}
+
+export interface PRChange {
+  id: number
+  pr_id: number
+  object_type: "template" | "values" | "global_values"
+  project_id: number | null
+  template_name: string | null
+  environment_id: number | null
+  global_values_name: string | null
+  base_version_id: number
+  proposed_payload: string
+  created_at: string
+}
+
+// Template variables
+export interface TemplateVariable {
+  name: string
+  default?: string
+}
+
+export interface TemplateVariablesResponse {
+  variables: TemplateVariable[]
+}
+
+export interface CreatePullRequestRequest {
+  title: string
+  description?: string
+  object_type: string
+  global_values_name?: string
+  proposed_payload: string
+}

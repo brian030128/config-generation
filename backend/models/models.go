@@ -89,3 +89,31 @@ type UserRole struct {
 	GrantedBy int64     `json:"granted_by"`
 	GrantedAt time.Time `json:"granted_at"`
 }
+
+type PullRequest struct {
+	ID           int64      `json:"id"`
+	ProjectID    *int64     `json:"project_id"`
+	AuthorID     int64      `json:"author_id"`
+	Title        string     `json:"title"`
+	Description  *string    `json:"description"`
+	Status       string     `json:"status"`
+	IsConflicted bool       `json:"is_conflicted"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+	MergedAt     *time.Time `json:"merged_at"`
+	ClosedAt     *time.Time `json:"closed_at"`
+	Changes      []PRChange `json:"changes,omitempty"`
+}
+
+type PRChange struct {
+	ID               int64           `json:"id"`
+	PRID             int64           `json:"pr_id"`
+	ObjectType       string          `json:"object_type"`
+	ProjectID        *int64          `json:"project_id"`
+	TemplateName     *string         `json:"template_name"`
+	EnvironmentID    *int64          `json:"environment_id"`
+	GlobalValuesName *string         `json:"global_values_name"`
+	BaseVersionID    int             `json:"base_version_id"`
+	ProposedPayload  string          `json:"proposed_payload"`
+	CreatedAt        time.Time       `json:"created_at"`
+}

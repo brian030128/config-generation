@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { usePullRequests } from "@/hooks/use-pull-requests"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
@@ -25,6 +26,7 @@ function statusVariant(status: PullRequest["status"]) {
 }
 
 export default function PullRequestsPage() {
+  const navigate = useNavigate()
   const [tab, setTab] = useState("open")
   const { data, isLoading, error } = usePullRequests()
 
@@ -66,7 +68,8 @@ export default function PullRequestsPage() {
             {filtered.map((pr) => (
               <div
                 key={pr.id}
-                className="flex items-center justify-between rounded-lg border px-4 py-3 transition-colors hover:bg-accent/50"
+                onClick={() => navigate(`/pull-requests/${pr.id}`)}
+                className="flex cursor-pointer items-center justify-between rounded-lg border px-4 py-3 transition-colors hover:bg-accent/50"
               >
                 <div className="flex items-center gap-3">
                   <span className="text-sm font-medium text-muted-foreground">

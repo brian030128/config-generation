@@ -4,6 +4,7 @@ import type {
   ProjectConfigTemplate,
   CreateTemplateRequest,
   AppendTemplateVersionRequest,
+  TemplateVariablesResponse,
 } from "./types"
 
 export const templatesApi = {
@@ -42,6 +43,13 @@ export const templatesApi = {
       .post<ProjectConfigTemplate>(
         `/projects/${projectName}/templates/${templateName}/versions`,
         req,
+      )
+      .then((r) => r.data),
+
+  getVariables: (projectName: string, templateName: string) =>
+    client
+      .get<TemplateVariablesResponse>(
+        `/projects/${projectName}/templates/${templateName}/variables`,
       )
       .then((r) => r.data),
 

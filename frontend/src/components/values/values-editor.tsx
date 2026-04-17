@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
 import { useAppendValuesVersion } from "@/hooks/use-values"
+import { useTemplateVariables } from "@/hooks/use-templates"
 import type { ProjectConfigValues } from "@/api/types"
-import { ValueRow } from "./value-row"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -29,45 +29,39 @@ export function ValuesEditor({
   const [payload, setPayload] = useState<Record<string, unknown>>({})
   const [commitMsg, setCommitMsg] = useState("")
   const appendVersion = useAppendValuesVersion(projectName, templateName, envName)
+  const { data: varsData, isLoading: varsLoading } = useTemplateVariables(projectName, templateName)
 
+  const variables = varsData?.variables ?? []
+
+  // Initialize payload from template variables, using existing values or defaults
   useEffect(() => {
-    if (values?.payload) {
-      setPayload(structuredClone(values.payload))
+    if (variables.length === 0) return
+    const newPayload: Record<string, unknown> = {}
+    for (const v of variables) {
+      if (values?.payload && v.name in values.payload) {
+        newPayload[v.name] = values.payload[v.name]
+      } else if (v.default !== undefined) {
+        newPayload[v.name] = v.default
+      } else {
+        newPayload[v.name] = ""
+      }
     }
-  }, [values?.id])
-
-  const entries = Object.entries(payload)
+    setPayload(newPayload)
+  }, [varsData, values?.id])
 
   function handleChange(key: string, newValue: unknown) {
     setPayload((prev) => ({ ...prev, [key]: newValue }))
   }
 
-  function handleDelete(key: string) {
-    setPayload((prev) => {
-      const copy = { ...prev }
-      delete copy[key]
-      return copy
-    })
-  }
-
-  function handleAddKey() {
-    const newKey = `new_key_${entries.length}`
-    setPayload((prev) => ({ ...prev, [newKey]: "" }))
-  }
-
-  // Check if any leaf value is empty
-  function hasEmptyValues(obj: Record<string, unknown>): boolean {
-    for (const v of Object.values(obj)) {
-      if (typeof v === "object" && v !== null && !Array.isArray(v)) {
-        if (hasEmptyValues(v as Record<string, unknown>)) return true
-      } else if (v === "" || v === null || v === undefined) {
-        return true
-      }
+  function hasEmptyValues(): boolean {
+    for (const v of variables) {
+      const val = payload[v.name]
+      if (val === "" || val === null || val === undefined) return true
     }
     return false
   }
 
-  const canSave = entries.length > 0 && !hasEmptyValues(payload)
+  const canSave = variables.length > 0 && !hasEmptyValues()
 
   function handleSave() {
     appendVersion.mutate(
@@ -86,6 +80,18 @@ export function ValuesEditor({
     )
   }
 
+  if (varsLoading) {
+    return <p className="text-sm text-muted-foreground">Loading template variables...</p>
+  }
+
+  if (variables.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        This template has no variables to configure.
+      </p>
+    )
+  }
+
   return (
     <div className="space-y-4">
       {values && (
@@ -95,31 +101,25 @@ export function ValuesEditor({
         </div>
       )}
 
-      <div className="rounded-lg border p-4">
-        {entries.length === 0 && (
-          <p className="text-sm text-muted-foreground">
-            No values defined. Add a key to get started.
-          </p>
-        )}
-
-        {entries.map(([key, val]) => (
-          <ValueRow
-            key={key}
-            keyName={key}
-            value={val}
-            onChange={(nv) => handleChange(key, nv)}
-            onDelete={() => handleDelete(key)}
-          />
+      <div className="rounded-lg border">
+        <div className="grid grid-cols-[1fr_2fr] gap-2 border-b bg-muted/50 px-4 py-2 text-sm font-medium text-muted-foreground">
+          <span>Key</span>
+          <span>Value</span>
+        </div>
+        {variables.map((v) => (
+          <div
+            key={v.name}
+            className="grid grid-cols-[1fr_2fr] items-center gap-2 border-b px-4 py-2 last:border-0"
+          >
+            <span className="font-mono text-sm">{v.name}</span>
+            <Input
+              className="font-mono text-sm"
+              value={String(payload[v.name] ?? "")}
+              onChange={(e) => handleChange(v.name, e.target.value)}
+              placeholder={v.default !== undefined ? `default: ${v.default}` : undefined}
+            />
+          </div>
         ))}
-
-        <Button
-          variant="ghost"
-          size="sm"
-          className="mt-2 text-xs"
-          onClick={handleAddKey}
-        >
-          + Add Key
-        </Button>
       </div>
 
       <div className="flex items-end gap-3">
