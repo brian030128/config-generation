@@ -7,6 +7,8 @@ import ProjectPage from "@/pages/project-page"
 import ProjectEnvPage from "@/pages/project-env-page"
 import GlobalValuesListPage from "@/pages/global-values-list"
 import GlobalValuesDetailPage from "@/pages/global-values-detail"
+import CreatePRPage from "@/pages/create-pr"
+import PullRequestsPage from "@/pages/pull-requests-page"
 
 const router = createBrowserRouter([
   {
@@ -19,6 +21,8 @@ const router = createBrowserRouter([
       { path: "projects/:name/env/:env", element: <ProjectEnvPage /> },
       { path: "global-values", element: <GlobalValuesListPage /> },
       { path: "global-values/:name", element: <GlobalValuesDetailPage /> },
+      { path: "global-values/:name/create-pr", element: <CreatePRPage /> },
+      { path: "pull-requests", element: <PullRequestsPage /> },
     ],
   },
   { path: "/login", element: <LoginPage /> },

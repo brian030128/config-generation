@@ -6,6 +6,7 @@
 Sidebar (persistent)
 ├── Projects          → project-listpage
 ├── Global Values     → global-values-listpage
+├── Pull Requests     → pull-requests-page
 └── User Menu
     └── Role Management (admin only)
 
@@ -19,13 +20,14 @@ Top Bar
 project-listpage
   └── project-page (click a project)
         ├── template-editor (click a template)
-        ├── project-env-page (click an environment)
-        │     └── deployment-review-page (click "Review Deployment")
-        └── pr-listpage (PRs tab)
-              └── pr-detail-page (click a PR)
+        └── project-env-page (click an environment)
+              └── deployment-review-page (click "Review Deployment")
 
 global-values-listpage
   └── global-values-detail-page (click an entry)
+
+pull-requests-page (Open / Closed tabs)
+  └── pr-detail-page (click a PR)
 
 role-management-page (admin)
 ```
@@ -36,7 +38,7 @@ role-management-page (admin)
 project-listpage → project-page → edit template or click environment → project-env-page → edit values → create PR
 
 ### 2. Review and merge a PR
-project-page (PRs tab) → pr-detail-page → inspect diffs → approve → author merges
+pull-requests-page → pr-detail-page → inspect diffs → approve → author merges
 
 ### 3. Deploy to an environment
 project-page → click environment → project-env-page → "Review Deployment" → deployment-review-page → review diffs → Deploy

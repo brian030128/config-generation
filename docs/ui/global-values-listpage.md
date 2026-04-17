@@ -36,22 +36,3 @@ Creates the entry with an empty payload (v1). Navigates to the detail page to ad
 ### Search
 Search bar filters entries by name (substring match).
 
----
-
-## Pull Requests
-
-A separate section (or tab) lists **Global Values PRs** — PRs that contain only Global Values changes, independent of any project.
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Global Values Pull Requests                                    │
-├─────────────────────────────────────────────────────────────────┤
-│  #7  Rotate all staging DB credentials       approved           │
-│      alice · 3 changes · Updated 1h ago                         │
-│                                                                 │
-│  #6  Add monitoring_endpoints entry          open               │
-│      bob · 1 change · Updated 3h ago                            │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-These follow the same lifecycle as project PRs (draft → open → approved → merged / closed) but are not scoped to a project. Approval condition for Global Values PRs is a system-level setting.

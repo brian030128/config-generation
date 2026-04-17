@@ -37,7 +37,6 @@ export default function ProjectPage() {
         <TabsList>
           <TabsTrigger value="templates">Templates</TabsTrigger>
           <TabsTrigger value="environments">Environments</TabsTrigger>
-          <TabsTrigger value="prs">Pull Requests</TabsTrigger>
         </TabsList>
 
         <TabsContent value="templates" className="mt-4">
@@ -51,11 +50,6 @@ export default function ProjectPage() {
           />
         </TabsContent>
 
-        <TabsContent value="prs" className="mt-4">
-          <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-            Pull Requests will be available in a future update.
-          </div>
-        </TabsContent>
       </Tabs>
     </div>
   )

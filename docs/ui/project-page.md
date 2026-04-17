@@ -2,14 +2,14 @@
 
 **Route:** `/projects/:projectName`
 
-The main hub for a project. Three tabbed sections: **Templates**, **Environments**, and **Pull Requests**.
+The main hub for a project. Two tabbed sections: **Templates** and **Environments**.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  ← Projects / billing-service                                   │
 │  Payment processing service configs                             │
 │                                                                 │
-│  [ Templates ]  [ Environments ]  [ Pull Requests ]             │
+│  [ Templates ]  [ Environments ]                                │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  (tab content below)                                            │
@@ -98,45 +98,7 @@ Available via a menu on each row. Requires `delete:project_values(project, env)`
 
 ---
 
-## 3. Pull Requests Tab
-
-Lists all PRs for this project.
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Pull Requests                              [+ New PR]          │
-│  [ Open ▾ ]                                                     │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  #42  Update staging DB credentials          approved           │
-│       alice · 2 changes · 1 approval · Updated 1h ago           │
-│                                                                 │
-│  #41  Add eu-prod environment values         open               │
-│       bob · 5 changes · 0 approvals · Updated 3h ago            │
-│                                                                 │
-│  #39  Refactor nginx template                open  ⚠ conflict   │
-│       carol · 1 change · 0 approvals · Updated 1d ago           │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### PR Row
-- **PR number and title**
-- **Status badge** — `draft`, `open`, `approved`, `merged`, `closed`
-- **Conflict indicator** if conflicted
-- **Author**, change count, approval count, last updated
-
-Clicking a row navigates to the **pr-detail-page**.
-
-### Status Filter
-Dropdown to filter by status. Default: `open` (shows `open` + `approved`).
-
-### "+ New PR" Button
-Opens the PR creation flow (see pr-detail-page for details).
-
----
-
-## 4. Project Settings (admin)
+## 3. Project Settings (admin)
 
 Accessible via a gear icon in the page header. Visible to users with `grant(project)`.
 
