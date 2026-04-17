@@ -1,0 +1,70 @@
+package models
+
+import "encoding/json"
+
+type CreateProjectRequest struct {
+	Name              string  `json:"name"`
+	Description       *string `json:"description"`
+	ApprovalCondition *string `json:"approval_condition"`
+}
+
+type CreateEnvironmentRequest struct {
+	Name        string  `json:"name"`
+	Description *string `json:"description"`
+}
+
+type CreateTemplateRequest struct {
+	TemplateName  string  `json:"template_name"`
+	Body          string  `json:"body"`
+	CommitMessage *string `json:"commit_message"`
+}
+
+type AppendTemplateVersionRequest struct {
+	Body          string  `json:"body"`
+	CommitMessage *string `json:"commit_message"`
+}
+
+type CreateProjectConfigValuesRequest struct {
+	TemplateName  string          `json:"template_name"`
+	EnvironmentID int64           `json:"environment_id"`
+	Payload       json.RawMessage `json:"payload"`
+	CommitMessage *string         `json:"commit_message"`
+}
+
+type AppendProjectConfigValuesVersionRequest struct {
+	Payload       json.RawMessage `json:"payload"`
+	CommitMessage *string         `json:"commit_message"`
+}
+
+type CreateGlobalValuesRequest struct {
+	Name          string          `json:"name"`
+	Payload       json.RawMessage `json:"payload"`
+	CommitMessage *string         `json:"commit_message"`
+}
+
+type AppendGlobalValuesVersionRequest struct {
+	Payload       json.RawMessage `json:"payload"`
+	CommitMessage *string         `json:"commit_message"`
+}
+
+type CreateRoleRequest struct {
+	Name        string                `json:"name"`
+	ProjectID   *int64                `json:"project_id"`
+	Permissions []PermissionAtomInput `json:"permissions"`
+}
+
+type PermissionAtomInput struct {
+	Action     string  `json:"action"`
+	Resource   string  `json:"resource"`
+	KeyProject *string `json:"key_project"`
+	KeyEnv     *string `json:"key_env"`
+	KeyName    *string `json:"key_name"`
+}
+
+type EditRolePermissionsRequest struct {
+	Permissions []PermissionAtomInput `json:"permissions"`
+}
+
+type AssignUserRoleRequest struct {
+	UserID int64 `json:"user_id"`
+}
