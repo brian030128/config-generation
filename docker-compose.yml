@@ -1,0 +1,51 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: configgen
+      POSTGRES_USER: configgen
+      POSTGRES_PASSWORD: configgen
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U configgen"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    image: migrate/migrate:v4.18.2
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend/db/migrations:/migrations
+    command:
+      - "-path=/migrations"
+      - "-database=postgres://configgen:configgen@db:5432/configgen?sslmode=disable"
+      - "up"
+
+  backend:
+    build:
+      context: ./backend
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://configgen:configgen@db:5432/configgen?sslmode=disable
+      JWT_SECRET: dev-secret-change-in-production
+    ports:
+      - "8080:8080"
+
+  frontend:
+    build:
+      context: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
