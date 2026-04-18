@@ -5,15 +5,11 @@ import { basicSetup } from "codemirror"
 import { javascript } from "@codemirror/lang-javascript"
 import { oneDark } from "@codemirror/theme-one-dark"
 import { toast } from "sonner"
-import {
-  useTemplate,
-  useAppendTemplateVersion,
-} from "@/hooks/use-templates"
+import { useTemplate } from "@/hooks/use-templates"
+import { useStageChange } from "@/hooks/use-pull-requests"
 import { templatesApi } from "@/api/templates"
 import { VersionHistory } from "./version-history"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 
 interface TemplateEditorProps {
@@ -29,13 +25,12 @@ export function TemplateEditor({
 }: TemplateEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
-  const [commitMsg, setCommitMsg] = useState("")
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null)
   const [isReadOnly, setIsReadOnly] = useState(false)
   const readOnlyCompartment = useRef(new Compartment())
 
   const { data: template } = useTemplate(projectName, templateName)
-  const appendVersion = useAppendTemplateVersion(projectName, templateName)
+  const stageChange = useStageChange(projectName)
 
   const latestVersionId = template?.version_id ?? null
 
@@ -79,7 +74,6 @@ export function TemplateEditor({
     viewRef.current = view
     setSelectedVersion(template.version_id)
     return () => view.destroy()
-    // Only run on mount and when template identity changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [template?.id])
 
@@ -129,12 +123,15 @@ export function TemplateEditor({
   function handleSave() {
     if (!viewRef.current || isReadOnly) return
     const body = viewRef.current.state.doc.toString()
-    appendVersion.mutate(
-      { body, commit_message: commitMsg.trim() || undefined },
+    stageChange.mutate(
+      {
+        object_type: "template",
+        template_name: templateName,
+        proposed_payload: body,
+      },
       {
         onSuccess: () => {
-          toast.success("Version saved")
-          setCommitMsg("")
+          toast.success("Change staged in draft")
         },
         onError: (err) => {
           toast.error("Failed to save", {
@@ -174,26 +171,14 @@ export function TemplateEditor({
             </p>
           )}
           {!isReadOnly && (
-            <div className="flex items-end gap-3">
-              <div className="flex-1 space-y-1">
-                <Label htmlFor="commit-msg" className="text-xs">
-                  Commit Message
-                </Label>
-                <Input
-                  id="commit-msg"
-                  value={commitMsg}
-                  onChange={(e) => setCommitMsg(e.target.value)}
-                  placeholder="Optional commit message"
-                  className="text-sm"
-                />
-              </div>
+            <div className="flex justify-end">
               <Button
                 id="tmpl-save-btn"
                 onClick={handleSave}
-                disabled={appendVersion.isPending}
+                disabled={stageChange.isPending}
                 size="sm"
               >
-                {appendVersion.isPending ? "Saving..." : "Save"}
+                {stageChange.isPending ? "Saving..." : "Save to Draft"}
               </Button>
             </div>
           )}

@@ -1,20 +1,23 @@
 import { useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { useTemplates } from "@/hooks/use-templates"
 import { formatRelativeTime } from "@/lib/utils"
 import { TemplateEditor } from "./template-editor"
 import { CreateTemplateDialog } from "./create-template-dialog"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Pencil } from "lucide-react"
+import { Pencil, ExternalLink } from "lucide-react"
 
 interface TemplateListProps {
   projectName: string
+  workspaceMode?: boolean
   modifiedTemplates?: Set<string | null>
 }
 
-export function TemplateList({ projectName, modifiedTemplates }: TemplateListProps) {
+export function TemplateList({ projectName, workspaceMode, modifiedTemplates }: TemplateListProps) {
   const { data, isLoading } = useTemplates(projectName)
   const [editingTemplate, setEditingTemplate] = useState<string | null>(null)
+  const navigate = useNavigate()
 
   const templates = data?.items ?? []
 
@@ -51,22 +54,33 @@ export function TemplateList({ projectName, modifiedTemplates }: TemplateListPro
                   <Badge variant="secondary" className="text-xs">modified</Badge>
                 )}
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() =>
-                  setEditingTemplate(
-                    editingTemplate === t.template_name
-                      ? null
-                      : t.template_name,
-                  )
-                }
-              >
-                <Pencil className="mr-2 h-3 w-3" />
-                {editingTemplate === t.template_name ? "Close" : "Edit"}
-              </Button>
+              {workspaceMode ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    setEditingTemplate(
+                      editingTemplate === t.template_name
+                        ? null
+                        : t.template_name,
+                    )
+                  }
+                >
+                  <Pencil className="mr-2 h-3 w-3" />
+                  {editingTemplate === t.template_name ? "Close" : "Edit"}
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => navigate(`/workspace/${projectName}`)}
+                >
+                  <ExternalLink className="mr-2 h-3 w-3" />
+                  Edit in Workspace
+                </Button>
+              )}
             </div>
-            {editingTemplate === t.template_name && (
+            {workspaceMode && editingTemplate === t.template_name && (
               <div className="mt-2">
                 <TemplateEditor
                   projectName={projectName}

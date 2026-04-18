@@ -1,22 +1,15 @@
 import { useState, useEffect } from "react"
-import { toast } from "sonner"
-import { useAppendValuesVersion } from "@/hooks/use-values"
+import { useNavigate } from "react-router-dom"
 import { useTemplateVariables } from "@/hooks/use-templates"
 import type { ProjectConfigValues } from "@/api/types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
 import {
   ReferenceSelector,
   parseReference,
-  buildReference,
 } from "./reference-selector"
+import { ExternalLink } from "lucide-react"
 
 interface ValuesEditorProps {
   projectName: string
@@ -34,13 +27,11 @@ export function ValuesEditor({
   const [payload, setPayload] = useState<Record<string, unknown>>({})
   const [refMode, setRefMode] = useState<Record<string, boolean>>({})
   const [refState, setRefState] = useState<Record<string, { group: string; key: string }>>({})
-  const [commitMsg, setCommitMsg] = useState("")
-  const appendVersion = useAppendValuesVersion(projectName, templateName, envName)
   const { data: varsData, isLoading: varsLoading } = useTemplateVariables(projectName, templateName)
+  const navigate = useNavigate()
 
   const variables = varsData?.variables ?? []
 
-  // Initialize payload from template variables, using existing values or defaults
   useEffect(() => {
     if (variables.length === 0) return
     const newPayload: Record<string, unknown> = {}
@@ -64,37 +55,6 @@ export function ValuesEditor({
     setRefMode(newRefMode)
     setRefState(newRefState)
   }, [varsData, values?.id])
-
-  function handleChange(key: string, newValue: unknown) {
-    setPayload((prev) => ({ ...prev, [key]: newValue }))
-  }
-
-  function hasEmptyValues(): boolean {
-    for (const v of variables) {
-      const val = payload[v.name]
-      if (val === "" || val === null || val === undefined) return true
-    }
-    return false
-  }
-
-  const canSave = variables.length > 0 && !hasEmptyValues()
-
-  function handleSave() {
-    appendVersion.mutate(
-      { payload, commit_message: commitMsg.trim() || undefined },
-      {
-        onSuccess: () => {
-          toast.success("Values saved")
-          setCommitMsg("")
-        },
-        onError: (err) => {
-          toast.error("Failed to save values", {
-            description: (err as Error).message,
-          })
-        },
-      },
-    )
-  }
 
   if (varsLoading) {
     return <p className="text-sm text-muted-foreground">Loading template variables...</p>
@@ -134,81 +94,33 @@ export function ValuesEditor({
             >
               <span className="font-mono text-sm">{v.name}</span>
               {isRef ? (
-                <ReferenceSelector
-                  group={ref.group}
-                  keyName={ref.key}
-                  onGroupChange={(g) => {
-                    const newRef = { group: g, key: "" }
-                    setRefState((prev) => ({ ...prev, [v.name]: newRef }))
-                    handleChange(v.name, "")
-                  }}
-                  onKeyChange={(k) => {
-                    const newRef = { group: ref.group, key: k }
-                    setRefState((prev) => ({ ...prev, [v.name]: newRef }))
-                    handleChange(v.name, buildReference(ref.group, k))
-                  }}
-                />
+                <span className="font-mono text-sm text-muted-foreground">
+                  {`\${${ref.group}.${ref.key}}`}
+                </span>
               ) : (
                 <Input
                   className="font-mono text-sm"
                   value={String(payload[v.name] ?? "")}
-                  onChange={(e) => handleChange(v.name, e.target.value)}
-                  placeholder={v.default !== undefined ? `default: ${v.default}` : undefined}
+                  disabled
                 />
               )}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  if (isRef) {
-                    setRefMode((prev) => ({ ...prev, [v.name]: false }))
-                    setRefState((prev) => ({ ...prev, [v.name]: { group: "", key: "" } }))
-                    handleChange(v.name, "")
-                  } else {
-                    setRefMode((prev) => ({ ...prev, [v.name]: true }))
-                    handleChange(v.name, "")
-                  }
-                }}
-              >
-                <Badge variant="outline" className="text-xs">
-                  {isRef ? "Ref" : "Text"}
-                </Badge>
-              </Button>
+              <Badge variant="outline" className="text-xs">
+                {isRef ? "Ref" : "Text"}
+              </Badge>
             </div>
           )
         })}
       </div>
 
-      <div className="flex items-end gap-3">
-        <div className="flex-1 space-y-1">
-          <Label htmlFor="val-commit" className="text-xs">
-            Commit Message
-          </Label>
-          <Input
-            id="val-commit"
-            value={commitMsg}
-            onChange={(e) => setCommitMsg(e.target.value)}
-            placeholder="Optional commit message"
-            className="text-sm"
-          />
-        </div>
+      <div className="flex justify-end">
         <Button
-          onClick={handleSave}
-          disabled={!canSave || appendVersion.isPending}
+          variant="outline"
           size="sm"
+          onClick={() => navigate(`/workspace/${projectName}/env/${envName}`)}
         >
-          {appendVersion.isPending ? "Saving..." : "Save"}
+          <ExternalLink className="mr-2 h-3 w-3" />
+          Edit in Workspace
         </Button>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span>
-              <Button size="sm" variant="outline" disabled>
-                Save to PR
-              </Button>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>Coming in a future update</TooltipContent>
-        </Tooltip>
       </div>
     </div>
   )

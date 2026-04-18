@@ -30,9 +30,9 @@ Lists all config templates owned by this project.
 │  Templates                                [+ New Template]      │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  app.yaml                     v8    Updated 2h ago     [Edit]   │
-│  database.conf                v3    Updated 1d ago     [Edit]   │
-│  nginx.conf                   v12   Updated 5m ago     [Edit]   │
+│  app.yaml            v8    Updated 2h ago   [Edit in Workspace]  │
+│  database.conf       v3    Updated 1d ago   [Edit in Workspace]  │
+│  nginx.conf          v12   Updated 5m ago   [Edit in Workspace]  │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -41,7 +41,7 @@ Lists all config templates owned by this project.
 - **Template name**
 - **Current version** (latest version number)
 - **Last updated** timestamp
-- **Edit button** — opens the template editor (inline or full-page)
+- **Edit in Workspace** button — navigates to the Workspace for this project
 
 ### "+ New Template" Button
 Visible to users with `write:project_templates(project)`.

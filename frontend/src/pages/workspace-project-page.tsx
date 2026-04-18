@@ -145,6 +145,7 @@ export default function WorkspaceProjectPage() {
         <TabsContent value="templates" className="mt-4">
           <TemplateList
             projectName={name!}
+            workspaceMode
             modifiedTemplates={modifiedTemplates}
           />
         </TabsContent>
