@@ -30,6 +30,8 @@ A **Global Values** entry is a named, reusable bag of key-value data, intended f
 
 For simplicity, **Global Values are always a single, flat level of key-value pairs**. No nesting. Values are scalars (strings, numbers, booleans).
 
+Each Global Values entry is its own governance unit. When creating an entry, the creator specifies an **approval condition** (same grammar as project approval conditions — see the PR Flow spec) that governs how PRs proposing changes to that entry are reviewed and approved. The system auto-creates an admin role for the entry and assigns it to the creator, mirroring the project creation flow.
+
 Example `test_db_values`:
 
 ```json

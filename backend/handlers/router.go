@@ -126,6 +126,12 @@ func NewRouter(db *sql.DB, jwtSecret []byte) chi.Router {
 					r.With(perm(db, "read", "global_values", nil, nil, param("name"))).
 						Get("/{versionID}", gv.GetVersion)
 				})
+
+				// --- Roles (global values scoped) ---
+				r.Route("/roles", func(r chi.Router) {
+					r.With(perm(db, "grant", "global_values", nil, nil, param("name"))).
+						Get("/", role.ListForGlobalValues)
+				})
 			})
 		})
 
@@ -135,6 +141,9 @@ func NewRouter(db *sql.DB, jwtSecret []byte) chi.Router {
 			r.Get("/", pr.List)
 			r.Get("/{prID}", pr.Get)
 			r.Post("/{prID}/close", pr.Close)
+			r.Post("/{prID}/merge", pr.Merge)
+			r.Post("/{prID}/approve", pr.Approve)
+			r.Post("/{prID}/withdraw-approval", pr.WithdrawApproval)
 		})
 
 		// --- Roles (non-project-scoped operations by role ID) ---

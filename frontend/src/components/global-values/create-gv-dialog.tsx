@@ -19,6 +19,7 @@ export function CreateGlobalValuesDialog() {
   const [name, setName] = useState("")
   const [initialKey, setInitialKey] = useState("")
   const [initialValue, setInitialValue] = useState("")
+  const [approvalCondition, setApprovalCondition] = useState("1 x gv_group_admin")
   const createGV = useCreateGlobalValues()
   const navigate = useNavigate()
 
@@ -26,6 +27,7 @@ export function CreateGlobalValuesDialog() {
     setName("")
     setInitialKey("")
     setInitialValue("")
+    setApprovalCondition("1 x gv_group_admin")
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -36,6 +38,7 @@ export function CreateGlobalValuesDialog() {
         name: name.trim(),
         payload: { [initialKey.trim()]: initialValue.trim() },
         commit_message: "Initial creation",
+        approval_condition: approvalCondition.trim() || undefined,
       },
       {
         onSuccess: (gv) => {
@@ -74,6 +77,15 @@ export function CreateGlobalValuesDialog() {
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. prod_db_values"
               required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="gv-approval">Approval Condition</Label>
+            <Input
+              id="gv-approval"
+              value={approvalCondition}
+              onChange={(e) => setApprovalCondition(e.target.value)}
+              placeholder="e.g. 1 x gv_group_admin"
             />
           </div>
           <div className="space-y-2">

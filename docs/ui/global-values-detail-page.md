@@ -61,12 +61,12 @@ Values that appear to be secrets (keys containing `password`, `secret`, `token`,
 Appends a new version with the current key-value state. Requires `write:global_values(name)`.
 
 ### "Save to PR" Button
-Stages the change into a **Global Values PR** — a separate PR type that is not scoped to any project. A user may only have **one active Global Values PR** at a time.
+Stages the change into a **Global Values PR** — a separate PR type scoped to this Global Values entry and governed by the entry's own approval condition and roles. A user may only have **one active Global Values PR per entry** at a time.
 
-- If the user **has no active Global Values PR** → opens a dialog to create one (title + description), then stages the change.
-- If the user **already has an active Global Values PR** → the change is added to it directly.
+- If the user **has no active Global Values PR for this entry** → opens a dialog to create one (title + description), then stages the change.
+- If the user **already has an active Global Values PR for this entry** → the change replaces the previous snapshot in that PR.
 
-Global Values PRs can bundle changes across multiple Global Values entries but cannot include project templates or project config values. If the PR already contains a change for this same entry, the new snapshot replaces the previous one.
+Global Values PRs cannot include project templates or project config values.
 
 ---
 

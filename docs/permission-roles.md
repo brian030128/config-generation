@@ -52,13 +52,13 @@ Since Project Config Templates, Project Config Values, and Global Values are ver
 | Permission | Key | Meaning |
 |---|---|---|
 | `grant(project)` | project | Modify role assignments and role definitions within the scope of the project. Exact semantics (grant-only-what-you-hold vs. grant-anything-in-scope) are **open** — see §6. |
+| `grant(global_values, name)` | name | Modify role assignments and role definitions scoped to the named Global Values entry. Also allows updating the entry's approval condition. |
 
 ### 3.4 Deferred
 
 The following are referenced in the system but **not yet specified** in this permission model:
 
 - `deploy(project, env)` and/or `rollback(project, env)` — gating the Deploy action in the deployment review GUI. See §6.
-- Ownership and grant authority over Global Values entries. See §6.
 - Transitive read of Global Values referenced by a Project Config Value. See §6.
 
 ---
@@ -85,6 +85,14 @@ Contains the following permissions:
 - *(Deploy permission — TBD, see §6.)*
 
 Note: `write:project_values(P, *)` is not listed separately because it is implied by `create:env_values(P)`.
+
+#### `gv_group_admin:<N>`
+
+Created automatically when a Global Values entry `N` is created. Assigned to the creator. Contains the following permissions:
+
+- `write:global_values(N)` — modify the entry (append new versions).
+- `delete:global_values(N)` — delete the entry and its entire version history.
+- `grant(global_values, N)` — manage roles and assignments scoped to this entry, and update the entry's approval condition.
 
 ### 4.2 Illustrative Custom Roles
 
@@ -130,7 +138,7 @@ The following are explicitly unresolved and need decisions before the model is c
 
 1. **Deploy and rollback permissions.** The deployment review GUI's Deploy action (and the rollback flow) currently have no permission gate. At minimum a `deploy(project, env)` permission is needed, and it should likely *not* be implied by write on values — authoring a value and pushing it to prod are different trust levels. Whether rollback is the same permission or separate is also open.
 
-2. **Global Values ownership.** Global Values are cross-project by design, so no project admin owns them. Who can create a new Global Values entry? Who can grant `write:global_values(name)` on an existing one? Candidate answers: a system-level `system_admin` role with `*`; per-entry ownership where the creator gets admin on that entry; or a separate `create:global_values` atom plus per-entry grant rights.
+2. **Global Values ownership.** ~~Resolved.~~ Each Global Values entry has per-entry ownership: the creator is automatically assigned the `gv_group_admin:<name>` role, which grants write, delete, and grant authority over that entry. The `grant(global_values, name)` permission controls who can manage roles and the approval condition for the entry. See §4.1.
 
 3. **Transitive read of referenced globals.** A Project Config Value may reference `${test_db_values.password}`. Rendering and deployment review need to read `test_db_values`. Does `read:project_values(P, env)` transitively authorize reading the globals referenced by those values, or must every reviewer hold explicit `read:global_values(name)` for each referenced entry? Affects the usability of the deployment review GUI directly.
 

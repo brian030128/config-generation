@@ -37,9 +37,10 @@ type AppendProjectConfigValuesVersionRequest struct {
 }
 
 type CreateGlobalValuesRequest struct {
-	Name          string          `json:"name"`
-	Payload       json.RawMessage `json:"payload"`
-	CommitMessage *string         `json:"commit_message"`
+	Name              string          `json:"name"`
+	Payload           json.RawMessage `json:"payload"`
+	CommitMessage     *string         `json:"commit_message"`
+	ApprovalCondition *string         `json:"approval_condition"`
 }
 
 type AppendGlobalValuesVersionRequest struct {

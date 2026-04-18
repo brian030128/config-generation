@@ -1,11 +1,18 @@
 import { useParams, useNavigate } from "react-router-dom"
 import { toast } from "sonner"
-import { usePullRequest, useClosePullRequest } from "@/hooks/use-pull-requests"
+import {
+  usePullRequest,
+  useClosePullRequest,
+  useMergePullRequest,
+  useApprovePullRequest,
+  useWithdrawApproval,
+} from "@/hooks/use-pull-requests"
 import { useGlobalValue } from "@/hooks/use-global-values"
+import { useAuth } from "@/lib/auth"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { formatRelativeTime } from "@/lib/utils"
-import { AlertTriangle, ArrowLeft } from "lucide-react"
+import { AlertTriangle, ArrowLeft, Check } from "lucide-react"
 import type { PullRequest, PRChange } from "@/api/types"
 
 function statusVariant(status: PullRequest["status"]) {
@@ -105,11 +112,21 @@ export default function PRDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const prId = Number(id)
+  const { user } = useAuth()
   const { data: pr, isLoading, error } = usePullRequest(prId)
   const closePR = useClosePullRequest()
+  const mergePR = useMergePullRequest()
+  const approvePR = useApprovePullRequest()
+  const withdrawApproval = useWithdrawApproval()
 
   const canClose =
     pr && ["draft", "open", "approved"].includes(pr.status)
+  const canMerge =
+    pr && pr.status === "approved" && !pr.is_conflicted
+  const isOpenForApproval =
+    pr && (pr.status === "open" || pr.status === "approved")
+  const hasApproved =
+    pr && user && pr.approvals?.some((a) => a.user_id === user.id && !a.withdrawn_at)
 
   function handleClose() {
     if (!pr) return
@@ -119,6 +136,48 @@ export default function PRDetailPage() {
       },
       onError: (err) => {
         toast.error("Failed to close pull request", {
+          description: (err as Error).message,
+        })
+      },
+    })
+  }
+
+  function handleMerge() {
+    if (!pr) return
+    mergePR.mutate(pr.id, {
+      onSuccess: () => {
+        toast.success("Pull request merged")
+      },
+      onError: (err) => {
+        toast.error("Failed to merge pull request", {
+          description: (err as Error).message,
+        })
+      },
+    })
+  }
+
+  function handleApprove() {
+    if (!pr) return
+    approvePR.mutate(pr.id, {
+      onSuccess: () => {
+        toast.success("Pull request approved")
+      },
+      onError: (err) => {
+        toast.error("Failed to approve pull request", {
+          description: (err as Error).message,
+        })
+      },
+    })
+  }
+
+  function handleWithdraw() {
+    if (!pr) return
+    withdrawApproval.mutate(pr.id, {
+      onSuccess: () => {
+        toast.success("Approval withdrawn")
+      },
+      onError: (err) => {
+        toast.error("Failed to withdraw approval", {
           description: (err as Error).message,
         })
       },
@@ -144,6 +203,8 @@ export default function PRDetailPage() {
       </div>
     )
   }
+
+  const activeApprovals = pr.approvals?.filter((a) => !a.withdrawn_at) ?? []
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -206,16 +267,72 @@ export default function PRDetailPage() {
         )}
       </div>
 
+      {/* Approvals */}
+      <div className="space-y-3">
+        <h2 className="text-sm font-medium">Approvals</h2>
+        {pr.approval_condition && (
+          <p className="text-xs text-muted-foreground">
+            Condition: <span className="font-mono">{pr.approval_condition}</span>
+          </p>
+        )}
+        {activeApprovals.length > 0 ? (
+          <div className="space-y-1">
+            {activeApprovals.map((approval) => (
+              <div
+                key={approval.id}
+                className="flex items-center gap-2 text-sm"
+              >
+                <Check className="h-4 w-4 text-green-600" />
+                <span>User #{approval.user_id}</span>
+                <span className="text-muted-foreground">
+                  approved {formatRelativeTime(approval.approved_at)}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">No approvals yet.</p>
+        )}
+      </div>
+
       {/* Actions */}
-      {canClose && (
+      {(canClose || canMerge || isOpenForApproval) && (
         <div className="flex gap-3 border-t pt-4">
-          <Button
-            variant="destructive"
-            onClick={handleClose}
-            disabled={closePR.isPending}
-          >
-            {closePR.isPending ? "Closing..." : "Close PR"}
-          </Button>
+          {isOpenForApproval && !hasApproved && (
+            <Button
+              variant="outline"
+              onClick={handleApprove}
+              disabled={approvePR.isPending}
+            >
+              {approvePR.isPending ? "Approving..." : "Approve"}
+            </Button>
+          )}
+          {isOpenForApproval && hasApproved && (
+            <Button
+              variant="ghost"
+              onClick={handleWithdraw}
+              disabled={withdrawApproval.isPending}
+            >
+              {withdrawApproval.isPending ? "Withdrawing..." : "Withdraw Approval"}
+            </Button>
+          )}
+          {canMerge && (
+            <Button
+              onClick={handleMerge}
+              disabled={mergePR.isPending}
+            >
+              {mergePR.isPending ? "Merging..." : "Merge"}
+            </Button>
+          )}
+          {canClose && (
+            <Button
+              variant="destructive"
+              onClick={handleClose}
+              disabled={closePR.isPending}
+            >
+              {closePR.isPending ? "Closing..." : "Close PR"}
+            </Button>
+          )}
         </div>
       )}
     </div>

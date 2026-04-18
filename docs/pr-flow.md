@@ -10,17 +10,28 @@ A PR is the mechanism by which changes to Project Config Templates, Project Conf
 
 ## 2. PR Scope
 
-A single PR may contain changes across **multiple versioned objects**, specifically:
+There are two distinct PR types:
 
-- One or more **Project Config Templates** (within the same project).
-- One or more **Project Config Values** (across any environments within the same project).
-- One or more **Global Values** entries.
+### 2.1 Project PRs
+
+A Project PR may contain changes across **multiple versioned objects** within a single project:
+
+- One or more **Project Config Templates**.
+- One or more **Project Config Values** (across any environments within the project).
 
 All changes within a PR are treated as an atomic unit — they are merged together or not at all. This allows authors to coordinate related changes (e.g. adding a new template key and updating the values that reference it) in a single reviewable unit.
 
-### 2.1 Constraints
+A Project PR **cannot** include Global Values changes.
 
-- A PR is scoped to a **single project**. Changes to Global Values may be included because project values reference them, but the PR belongs to the owning project.
+### 2.2 Global Values PRs
+
+A Global Values PR proposes changes to a single **Global Values entry**. It is scoped to that entry and governed by the entry's own approval condition and roles (see §5).
+
+A Global Values PR **cannot** include project templates or project config values.
+
+### 2.3 Constraints
+
+- A PR is scoped to either a **single project** (Project PR) or a **single Global Values entry** (Global Values PR).
 - Each changed object in the PR contains a full-copy snapshot of its new content (consistent with the versioning strategy in the Version Control spec). The diff shown to reviewers is computed between the object's current latest version and the proposed snapshot.
 - A PR cannot include changes to non-versioned objects (Projects, Environments).
 
@@ -63,7 +74,8 @@ Any user with write permission on at least one of the objects being changed may 
 A PR contains:
 
 - `pr_id` — unique identifier.
-- `project` — the owning project.
+- `project` — the owning project (Project PRs only; null for Global Values PRs).
+- `global_values_name` — the target Global Values entry (Global Values PRs only; null for Project PRs).
 - `author` — the user who created the PR.
 - `title` — short summary of the change.
 - `description` — optional free-text body.
@@ -71,13 +83,15 @@ A PR contains:
 - `changes` — list of proposed object snapshots (see section 2).
 - `created_at`, `updated_at` — timestamps.
 
+A user may have at most **one active** (draft/open/approved) **Global Values PR per entry**.
+
 ---
 
 ## 5. Approval Condition
 
 ### 5.1 Definition
 
-Each project has a configurable **approval condition** that governs when a PR is considered approved. The condition is a boolean expression composed of **role requirements** joined by `AND` and `OR` operators, with grouping via parentheses.
+Each project and each Global Values entry has a configurable **approval condition** that governs when a PR is considered approved. For Project PRs, the project's condition applies; for Global Values PRs, the entry's condition applies. The condition is a boolean expression composed of **role requirements** joined by `AND` and `OR` operators, with grouping via parentheses.
 
 A **role requirement** has the form:
 
@@ -87,7 +101,7 @@ A **role requirement** has the form:
 
 where `<count>` is a positive integer and `<role>` is any role defined within the project's scope (e.g. `project_admin`, `release_manager`, `project_developer`).
 
-A role requirement is satisfied when at least `<count>` distinct users holding that role have approved the PR. The approving users must be different from the PR author — self-approval does not count.
+A role requirement is satisfied when at least `<count>` distinct users holding that role have approved the PR.
 
 ### 5.2 Operators
 
@@ -106,15 +120,17 @@ A role requirement is satisfied when at least `<count>` distinct users holding t
 
 ### 5.4 Initial Condition
 
-When a project is created, the creator specifies the approval condition. If none is provided, the default is:
+When a project is created, the creator specifies the approval condition. If none is provided, the default is `1 x project_admin`.
+
+When a Global Values entry is created, the creator specifies the approval condition. If none is provided, the default is:
 
 ```
-1 x project_admin
+1 x gv_group_admin
 ```
 
 ### 5.5 Modifying the Condition
 
-A user with `grant(<project>)` permission may update the approval condition at any time. Changes take effect immediately for all `open` PRs — their approval status is re-evaluated against the new condition.
+A user with `grant(<project>)` permission may update a project's approval condition at any time. A user with `grant(global_values, <name>)` may update a Global Values entry's approval condition. Changes take effect immediately for all `open` PRs — their approval status is re-evaluated against the new condition.
 
 ### 5.6 Approval Mechanics
 
@@ -147,6 +163,12 @@ When the author clicks **Merge**:
 
 Merging a PR does **not** trigger a deployment. The merged changes are now the latest versions, but deployment remains a separate, explicit action via the Deployment Review GUI (see the Version Control & Deployment spec).
 
+### 6.4 Post-Merge: Global Values PRs
+
+When a Global Values PR is merged, all other unmerged (draft, open, or approved) PRs targeting the **same Global Values entry** are automatically closed. The system sets their status to `closed` with a message referencing the merged PR (e.g. `"Auto-closed: superseded by PR #N"`).
+
+Rationale: Global Values use full-copy versioning. Once a PR is merged, every other PR's `base_version_id` for that entry is stale. Rather than marking them conflicted and requiring manual close, the system auto-closes them. Authors may create new PRs incorporating the latest version.
+
 ---
 
 ## 7. Conflicts
@@ -167,12 +189,23 @@ Conflicts cannot be automatically resolved. A conflicted PR is **invalidated**: 
 
 PR operations interact with the existing permission model as follows:
 
+### 8.1 Project PRs
+
 | Action | Required Permission |
 |---|---|
 | Create a PR with template changes | `write:project_templates(project)` |
 | Create a PR with value changes | `write:project_values(project, env)` for each affected env |
-| Create a PR with global value changes | `write:global_values(name)` for each affected entry |
-| Approve a PR | `read` permission on all objects in the PR, plus membership in a role referenced by the approval condition |
+| Approve a PR | `read` permission on all objects in the PR, plus membership in a role referenced by the project's approval condition |
 | Merge a PR | Must be the PR author; PR must be `approved` |
 | Close a PR | PR author or `grant(project)` holder |
 | Modify the approval condition | `grant(project)` |
+
+### 8.2 Global Values PRs
+
+| Action | Required Permission |
+|---|---|
+| Create a Global Values PR | `write:global_values(name)` for the target entry |
+| Approve a Global Values PR | `read:global_values(name)` plus membership in a role referenced by the entry's approval condition |
+| Merge a Global Values PR | Must be the PR author; PR must be `approved` |
+| Close a Global Values PR | PR author or `grant(global_values, name)` holder |
+| Modify the approval condition | `grant(global_values, name)` |

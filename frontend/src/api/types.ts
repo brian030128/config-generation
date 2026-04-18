@@ -57,6 +57,7 @@ export interface GlobalValues {
   version_id: number
   payload: Record<string, string | number | boolean | null>
   commit_message: string | null
+  approval_condition: string
   created_by: number
   created_at: string
 }
@@ -65,6 +66,7 @@ export interface Role {
   id: number
   name: string
   project_id: number | null
+  global_values_name: string | null
   is_auto_created: boolean
   created_at: string
   permissions?: RolePermission[]
@@ -128,6 +130,7 @@ export interface CreateGlobalValuesRequest {
   name: string
   payload: Record<string, string | number | boolean | null>
   commit_message?: string
+  approval_condition?: string
 }
 
 export interface AppendGlobalValuesVersionRequest {
@@ -139,16 +142,27 @@ export interface AppendGlobalValuesVersionRequest {
 export interface PullRequest {
   id: number
   project_id: number | null
+  global_values_name: string | null
   author_id: number
   title: string
   description: string | null
   status: "draft" | "open" | "approved" | "merged" | "closed"
   is_conflicted: boolean
+  approval_condition: string
   created_at: string
   updated_at: string
   merged_at: string | null
   closed_at: string | null
   changes?: PRChange[]
+  approvals?: PRApproval[]
+}
+
+export interface PRApproval {
+  id: number
+  pr_id: number
+  user_id: number
+  approved_at: string
+  withdrawn_at: string | null
 }
 
 export interface PRChange {

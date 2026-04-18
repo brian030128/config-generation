@@ -53,23 +53,25 @@ type ProjectConfigValues struct {
 }
 
 type GlobalValues struct {
-	ID            int64           `json:"id"`
-	Name          string          `json:"name"`
-	VersionID     int             `json:"version_id"`
-	Payload       json.RawMessage `json:"payload"`
-	CommitMessage *string         `json:"commit_message"`
-	CreatedBy     int64           `json:"created_by"`
-	CreatedAt     time.Time       `json:"created_at"`
+	ID                int64           `json:"id"`
+	Name              string          `json:"name"`
+	VersionID         int             `json:"version_id"`
+	Payload           json.RawMessage `json:"payload"`
+	CommitMessage     *string         `json:"commit_message"`
+	ApprovalCondition string          `json:"approval_condition"`
+	CreatedBy         int64           `json:"created_by"`
+	CreatedAt         time.Time       `json:"created_at"`
 }
 
 type Role struct {
-	ID            int64            `json:"id"`
-	Name          string           `json:"name"`
-	ProjectID     *int64           `json:"project_id"`
-	IsAutoCreated bool             `json:"is_auto_created"`
-	CreatedAt     time.Time        `json:"created_at"`
-	Permissions   []RolePermission `json:"permissions,omitempty"`
-	Members       []UserRole       `json:"members,omitempty"`
+	ID               int64            `json:"id"`
+	Name             string           `json:"name"`
+	ProjectID        *int64           `json:"project_id"`
+	GlobalValuesName *string          `json:"global_values_name"`
+	IsAutoCreated    bool             `json:"is_auto_created"`
+	CreatedAt        time.Time        `json:"created_at"`
+	Permissions      []RolePermission `json:"permissions,omitempty"`
+	Members          []UserRole       `json:"members,omitempty"`
 }
 
 type RolePermission struct {
@@ -91,18 +93,29 @@ type UserRole struct {
 }
 
 type PullRequest struct {
-	ID           int64      `json:"id"`
-	ProjectID    *int64     `json:"project_id"`
-	AuthorID     int64      `json:"author_id"`
-	Title        string     `json:"title"`
-	Description  *string    `json:"description"`
-	Status       string     `json:"status"`
-	IsConflicted bool       `json:"is_conflicted"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-	MergedAt     *time.Time `json:"merged_at"`
-	ClosedAt     *time.Time `json:"closed_at"`
-	Changes      []PRChange `json:"changes,omitempty"`
+	ID                int64        `json:"id"`
+	ProjectID         *int64       `json:"project_id"`
+	GlobalValuesName  *string      `json:"global_values_name"`
+	AuthorID          int64        `json:"author_id"`
+	Title             string       `json:"title"`
+	Description       *string      `json:"description"`
+	Status            string       `json:"status"`
+	IsConflicted      bool         `json:"is_conflicted"`
+	ApprovalCondition string       `json:"approval_condition"`
+	CreatedAt         time.Time    `json:"created_at"`
+	UpdatedAt         time.Time    `json:"updated_at"`
+	MergedAt          *time.Time   `json:"merged_at"`
+	ClosedAt          *time.Time   `json:"closed_at"`
+	Changes           []PRChange   `json:"changes,omitempty"`
+	Approvals         []PRApproval `json:"approvals,omitempty"`
+}
+
+type PRApproval struct {
+	ID          int64      `json:"id"`
+	PRID        int64      `json:"pr_id"`
+	UserID      int64      `json:"user_id"`
+	ApprovedAt  time.Time  `json:"approved_at"`
+	WithdrawnAt *time.Time `json:"withdrawn_at"`
 }
 
 type PRChange struct {

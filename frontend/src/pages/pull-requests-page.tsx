@@ -76,6 +76,11 @@ export default function PullRequestsPage() {
                     #{pr.id}
                   </span>
                   <span className="text-sm font-medium">{pr.title}</span>
+                  <Badge variant="outline" className="font-mono text-xs">
+                    {pr.global_values_name
+                      ? `GV: ${pr.global_values_name}`
+                      : `Project #${pr.project_id}`}
+                  </Badge>
                   <Badge variant={statusVariant(pr.status)}>{pr.status}</Badge>
                   {pr.is_conflicted && (
                     <AlertTriangle className="h-4 w-4 text-amber-500" />

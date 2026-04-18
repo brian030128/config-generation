@@ -30,8 +30,9 @@ Clicking a row navigates to the **global-values-detail-page**.
 ### "+ New Entry" Button
 Opens a dialog:
 - **Name** — text input (required, must be globally unique)
+- **Approval condition** — text input, pre-filled with `1 x gv_group_admin`
 
-Creates the entry with an empty payload (v1). Navigates to the detail page to add keys.
+On creation, the system auto-creates the `gv_group_admin:<name>` role and assigns it to the creator (same pattern as project creation). Creates the entry with an empty payload (v1). Navigates to the detail page to add keys.
 
 ### Search
 Search bar filters entries by name (substring match).

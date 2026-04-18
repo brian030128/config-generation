@@ -19,4 +19,15 @@ export const pullRequestsApi = {
 
   close: (id: number) =>
     client.post<PullRequest>(`/pull-requests/${id}/close`).then((r) => r.data),
+
+  merge: (id: number) =>
+    client.post<PullRequest>(`/pull-requests/${id}/merge`).then((r) => r.data),
+
+  approve: (id: number) =>
+    client.post<PullRequest>(`/pull-requests/${id}/approve`).then((r) => r.data),
+
+  withdrawApproval: (id: number) =>
+    client
+      .post<PullRequest>(`/pull-requests/${id}/withdraw-approval`)
+      .then((r) => r.data),
 }

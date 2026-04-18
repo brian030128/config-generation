@@ -88,7 +88,7 @@ Only the **PR author** can add or update changes. A user may only have **one act
 - **Edit a template** — opens the template editor, saves to this PR instead of directly
 - **Edit values** — opens the values editor for a (template, env) pair, saves to this PR
 
-Note: Global Values changes are handled in separate **Global Values PRs** (see global-values-listpage). Project PRs cannot include Global Values changes.
+Note: Global Values changes are handled in separate **Global Values PRs**, each scoped to a single Global Values entry with its own approval condition (see global-values-detail-page). Project PRs cannot include Global Values changes.
 
 If the PR already contains a change for the same object, the new snapshot replaces the previous one.
 
@@ -101,7 +101,7 @@ Adding changes to an `approved` PR **resets all approvals** and returns it to `o
 Shows the approval condition and current approval status.
 
 ### Approval Condition Display
-The project's approval condition is shown as text (e.g. `1 x project_admin AND 1 x project_developer`). Each sub-condition shows whether it's satisfied or not.
+The approval condition is shown as text (e.g. `1 x project_admin AND 1 x project_developer`). For Project PRs, this is the project's condition; for Global Values PRs, this is the entry's condition. Each sub-condition shows whether it's satisfied or not.
 
 ### Approval List
 Each approval shows:
@@ -124,8 +124,11 @@ A visual indicator showing how many approvals are still needed. For example: `1/
 - **Merge** — visible when status is `approved` and no conflicts. Creates new version rows atomically for all changes. Post-merge, the page shows a "merged" state with a summary.
 - **Close PR** — available in `draft`, `open`, or `approved` states. Moves to `closed`.
 
-### For Project Admins
-- **Close PR** — admins with `grant(project)` can close any PR.
+### For Admins
+- **Close PR** — project admins with `grant(project)` can close any Project PR. Global Values entry admins with `grant(global_values, name)` can close any Global Values PR on that entry.
+
+### Auto-Close on Merge (Global Values PRs only)
+When a Global Values PR is merged, all other unmerged PRs on the same entry are automatically closed (see PR Flow spec §6.4).
 
 ---
 

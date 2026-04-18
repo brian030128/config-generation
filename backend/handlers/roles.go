@@ -13,8 +13,9 @@ type RoleHandler struct {
 	DB *sql.DB
 }
 
-// checkGrantPermission looks up the role's project, then checks that the user
-// holds grant(project) permission. Returns the role and true if authorized.
+// checkGrantPermission looks up the role's scope (project or global values entry),
+// then checks that the user holds the appropriate grant permission.
+// Returns the role and true if authorized.
 func (h *RoleHandler) checkGrantPermission(w http.ResponseWriter, r *http.Request) (*models.Role, bool) {
 	roleID, err := urlParamInt64(r, "roleID")
 	if err != nil {
@@ -24,9 +25,9 @@ func (h *RoleHandler) checkGrantPermission(w http.ResponseWriter, r *http.Reques
 
 	var role models.Role
 	err = h.DB.QueryRowContext(r.Context(), `
-		SELECT r.id, r.name, r.project_id, r.is_auto_created, r.created_at
+		SELECT r.id, r.name, r.project_id, r.global_values_name, r.is_auto_created, r.created_at
 		FROM roles r WHERE r.id = $1
-	`, roleID).Scan(&role.ID, &role.Name, &role.ProjectID, &role.IsAutoCreated, &role.CreatedAt)
+	`, roleID).Scan(&role.ID, &role.Name, &role.ProjectID, &role.GlobalValuesName, &role.IsAutoCreated, &role.CreatedAt)
 	if err == sql.ErrNoRows {
 		writeError(w, http.StatusNotFound, "role not found", "not_found")
 		return nil, false
@@ -36,34 +37,52 @@ func (h *RoleHandler) checkGrantPermission(w http.ResponseWriter, r *http.Reques
 		return nil, false
 	}
 
-	// Resolve project name for permission check.
-	if role.ProjectID == nil {
-		writeError(w, http.StatusForbidden, "system-level role management not yet supported", "forbidden")
-		return nil, false
-	}
-
-	var projectName string
-	err = h.DB.QueryRowContext(r.Context(), `SELECT name FROM projects WHERE id = $1`, *role.ProjectID).Scan(&projectName)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
-		return nil, false
-	}
-
 	user := currentUser(r)
-	allowed, err := middleware.CheckPermission(r.Context(), h.DB, user.UserID, models.PermissionRequirement{
-		Action:     models.ActionGrant,
-		KeyProject: projectName,
-	})
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "permission check failed", "internal")
-		return nil, false
-	}
-	if !allowed {
-		writeError(w, http.StatusForbidden, "insufficient permissions", "forbidden")
-		return nil, false
+
+	if role.GlobalValuesName != nil {
+		// Global values scoped role: check grant(global_values, name).
+		allowed, err := middleware.CheckPermission(r.Context(), h.DB, user.UserID, models.PermissionRequirement{
+			Action:   models.ActionGrant,
+			Resource: models.ResourceGlobalValues,
+			KeyName:  *role.GlobalValuesName,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "permission check failed", "internal")
+			return nil, false
+		}
+		if !allowed {
+			writeError(w, http.StatusForbidden, "insufficient permissions", "forbidden")
+			return nil, false
+		}
+		return &role, true
 	}
 
-	return &role, true
+	if role.ProjectID != nil {
+		// Project scoped role: check grant(project).
+		var projectName string
+		err = h.DB.QueryRowContext(r.Context(), `SELECT name FROM projects WHERE id = $1`, *role.ProjectID).Scan(&projectName)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			return nil, false
+		}
+
+		allowed, err := middleware.CheckPermission(r.Context(), h.DB, user.UserID, models.PermissionRequirement{
+			Action:     models.ActionGrant,
+			KeyProject: projectName,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "permission check failed", "internal")
+			return nil, false
+		}
+		if !allowed {
+			writeError(w, http.StatusForbidden, "insufficient permissions", "forbidden")
+			return nil, false
+		}
+		return &role, true
+	}
+
+	writeError(w, http.StatusForbidden, "system-level role management not yet supported", "forbidden")
+	return nil, false
 }
 
 // Create creates a new custom role within a project.
@@ -102,8 +121,8 @@ func (h *RoleHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var role models.Role
 	err = tx.QueryRowContext(r.Context(), `
 		INSERT INTO roles (name, project_id, is_auto_created) VALUES ($1, $2, false)
-		RETURNING id, name, project_id, is_auto_created, created_at
-	`, req.Name, projectID).Scan(&role.ID, &role.Name, &role.ProjectID, &role.IsAutoCreated, &role.CreatedAt)
+		RETURNING id, name, project_id, global_values_name, is_auto_created, created_at
+	`, req.Name, projectID).Scan(&role.ID, &role.Name, &role.ProjectID, &role.GlobalValuesName, &role.IsAutoCreated, &role.CreatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
 			writeError(w, http.StatusConflict, "role name already exists for this project", "conflict")
@@ -326,7 +345,7 @@ func (h *RoleHandler) ListForProject(w http.ResponseWriter, r *http.Request) {
 
 	// Fetch roles.
 	roleRows, err := h.DB.QueryContext(r.Context(), `
-		SELECT id, name, project_id, is_auto_created, created_at
+		SELECT id, name, project_id, global_values_name, is_auto_created, created_at
 		FROM roles WHERE project_id = $1 ORDER BY name
 	`, projectID)
 	if err != nil {
@@ -338,7 +357,98 @@ func (h *RoleHandler) ListForProject(w http.ResponseWriter, r *http.Request) {
 	var roles []models.Role
 	for roleRows.Next() {
 		var role models.Role
-		if err := roleRows.Scan(&role.ID, &role.Name, &role.ProjectID, &role.IsAutoCreated, &role.CreatedAt); err != nil {
+		if err := roleRows.Scan(&role.ID, &role.Name, &role.ProjectID, &role.GlobalValuesName, &role.IsAutoCreated, &role.CreatedAt); err != nil {
+			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			return
+		}
+		roles = append(roles, role)
+	}
+	if err := roleRows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+
+	// Fetch permissions and members for each role.
+	for i := range roles {
+		permRows, err := h.DB.QueryContext(r.Context(), `
+			SELECT id, role_id, action, resource, key_project, key_env, key_name
+			FROM role_permissions WHERE role_id = $1
+		`, roles[i].ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			return
+		}
+		roles[i].Permissions = []models.RolePermission{}
+		for permRows.Next() {
+			var rp models.RolePermission
+			if err := permRows.Scan(&rp.ID, &rp.RoleID, &rp.Action, &rp.Resource, &rp.KeyProject, &rp.KeyEnv, &rp.KeyName); err != nil {
+				permRows.Close()
+				writeError(w, http.StatusInternalServerError, "database error", "internal")
+				return
+			}
+			roles[i].Permissions = append(roles[i].Permissions, rp)
+		}
+		permRows.Close()
+
+		memberRows, err := h.DB.QueryContext(r.Context(), `
+			SELECT id, user_id, role_id, granted_by, granted_at
+			FROM user_roles WHERE role_id = $1
+		`, roles[i].ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			return
+		}
+		roles[i].Members = []models.UserRole{}
+		for memberRows.Next() {
+			var ur models.UserRole
+			if err := memberRows.Scan(&ur.ID, &ur.UserID, &ur.RoleID, &ur.GrantedBy, &ur.GrantedAt); err != nil {
+				memberRows.Close()
+				writeError(w, http.StatusInternalServerError, "database error", "internal")
+				return
+			}
+			roles[i].Members = append(roles[i].Members, ur)
+		}
+		memberRows.Close()
+	}
+
+	if roles == nil {
+		roles = []models.Role{}
+	}
+	writeJSON(w, http.StatusOK, models.ListResponse[models.Role]{Items: roles, Count: len(roles)})
+}
+
+// ListForGlobalValues lists all roles scoped to a global values entry with their permissions and members.
+func (h *RoleHandler) ListForGlobalValues(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	// Verify the global values entry exists.
+	var exists bool
+	err := h.DB.QueryRowContext(r.Context(), `
+		SELECT EXISTS(SELECT 1 FROM global_values WHERE name = $1)
+	`, name).Scan(&exists)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+	if !exists {
+		writeError(w, http.StatusNotFound, "global values entry not found", "not_found")
+		return
+	}
+
+	roleRows, err := h.DB.QueryContext(r.Context(), `
+		SELECT id, name, project_id, global_values_name, is_auto_created, created_at
+		FROM roles WHERE global_values_name = $1 ORDER BY name
+	`, name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+	defer roleRows.Close()
+
+	var roles []models.Role
+	for roleRows.Next() {
+		var role models.Role
+		if err := roleRows.Scan(&role.ID, &role.Name, &role.ProjectID, &role.GlobalValuesName, &role.IsAutoCreated, &role.CreatedAt); err != nil {
 			writeError(w, http.StatusInternalServerError, "database error", "internal")
 			return
 		}

@@ -1,8 +1,8 @@
 # Role Management Page
 
-**Route:** `/projects/:projectName/roles` (project-scoped) or `/admin/roles` (system-level)
+**Route:** `/projects/:projectName/roles` (project-scoped), `/global-values/:name/roles` (entry-scoped), or `/admin/roles` (system-level)
 
-Manages roles, their permissions, and user assignments. Accessible to users with `grant(project)` for project-scoped roles.
+Manages roles, their permissions, and user assignments. Accessible to users with `grant(project)` for project-scoped roles, or `grant(global_values, name)` for Global Values entry-scoped roles.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐

@@ -38,3 +38,36 @@ export function useClosePullRequest() {
     onSuccess: () => qc.invalidateQueries({ queryKey: pullRequestKeys.all }),
   })
 }
+
+export function useMergePullRequest() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => pullRequestsApi.merge(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: pullRequestKeys.all })
+      qc.invalidateQueries({ queryKey: ["global-values"] })
+    },
+  })
+}
+
+export function useApprovePullRequest() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => pullRequestsApi.approve(id),
+    onSuccess: (_, id) => {
+      qc.invalidateQueries({ queryKey: pullRequestKeys.all })
+      qc.invalidateQueries({ queryKey: pullRequestKeys.detail(id) })
+    },
+  })
+}
+
+export function useWithdrawApproval() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => pullRequestsApi.withdrawApproval(id),
+    onSuccess: (_, id) => {
+      qc.invalidateQueries({ queryKey: pullRequestKeys.all })
+      qc.invalidateQueries({ queryKey: pullRequestKeys.detail(id) })
+    },
+  })
+}
