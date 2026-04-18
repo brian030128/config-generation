@@ -17,26 +17,22 @@ import { Plus } from "lucide-react"
 export function CreateGlobalValuesDialog() {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState("")
-  const [initialKey, setInitialKey] = useState("")
-  const [initialValue, setInitialValue] = useState("")
   const [approvalCondition, setApprovalCondition] = useState("1 x gv_group_admin")
   const createGV = useCreateGlobalValues()
   const navigate = useNavigate()
 
   function reset() {
     setName("")
-    setInitialKey("")
-    setInitialValue("")
     setApprovalCondition("1 x gv_group_admin")
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!name.trim() || !initialKey.trim() || !initialValue.trim()) return
+    if (!name.trim()) return
     createGV.mutate(
       {
         name: name.trim(),
-        payload: { [initialKey.trim()]: initialValue.trim() },
+        payload: {},
         commit_message: "Initial creation",
         approval_condition: approvalCondition.trim() || undefined,
       },
@@ -87,23 +83,6 @@ export function CreateGlobalValuesDialog() {
               onChange={(e) => setApprovalCondition(e.target.value)}
               placeholder="e.g. 1 x gv_group_admin"
             />
-          </div>
-          <div className="space-y-2">
-            <Label>Initial Key-Value Pair</Label>
-            <div className="flex gap-2">
-              <Input
-                value={initialKey}
-                onChange={(e) => setInitialKey(e.target.value)}
-                placeholder="Key"
-                required
-              />
-              <Input
-                value={initialValue}
-                onChange={(e) => setInitialValue(e.target.value)}
-                placeholder="Value"
-                required
-              />
-            </div>
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" type="button" onClick={() => setOpen(false)}>

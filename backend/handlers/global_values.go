@@ -40,9 +40,12 @@ func (h *GlobalValuesHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body", "bad_request")
 		return
 	}
-	if req.Name == "" || len(req.Payload) == 0 {
-		writeError(w, http.StatusBadRequest, "name and payload are required", "validation")
+	if req.Name == "" {
+		writeError(w, http.StatusBadRequest, "name is required", "validation")
 		return
+	}
+	if len(req.Payload) == 0 {
+		req.Payload = []byte(`{}`)
 	}
 	if err := validateFlatJSON(req.Payload); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error(), "validation")
