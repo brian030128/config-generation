@@ -28,7 +28,7 @@ export function ReferenceSelector({
 
   return (
     <div className="flex gap-2">
-      <Select value={group} onValueChange={onGroupChange}>
+      <Select value={group || undefined} onValueChange={onGroupChange}>
         <SelectTrigger className="w-40">
           <SelectValue placeholder="Group" />
         </SelectTrigger>
@@ -40,7 +40,7 @@ export function ReferenceSelector({
           ))}
         </SelectContent>
       </Select>
-      <Select value={keyName} onValueChange={onKeyChange}>
+      <Select value={keyName || undefined} onValueChange={onKeyChange} disabled={!group}>
         <SelectTrigger className="w-40">
           <SelectValue placeholder="Key" />
         </SelectTrigger>
