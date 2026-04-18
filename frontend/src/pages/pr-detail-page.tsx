@@ -8,6 +8,8 @@ import {
   useWithdrawApproval,
 } from "@/hooks/use-pull-requests"
 import { useGlobalValue } from "@/hooks/use-global-values"
+import { useTemplate } from "@/hooks/use-templates"
+import { useProjects } from "@/hooks/use-projects"
 import { useAuth } from "@/lib/auth"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -30,7 +32,74 @@ function statusVariant(status: PullRequest["status"]) {
   }
 }
 
-function ChangeCard({ change }: { change: PRChange }) {
+function TemplateDiffCard({ change, projectName }: { change: PRChange; projectName: string }) {
+  const { data: currentTemplate } = useTemplate(projectName, change.template_name ?? "")
+  const currentBody = currentTemplate?.body ?? ""
+  const proposedBody = change.proposed_payload
+
+  const oldLines = currentBody.split("\n")
+  const newLines = proposedBody.split("\n")
+  const maxLen = Math.max(oldLines.length, newLines.length)
+
+  type DiffLine = { type: "unchanged" | "added" | "removed" | "changed"; num: number; old?: string; new?: string }
+  const lines: DiffLine[] = []
+  for (let i = 0; i < maxLen; i++) {
+    const ol = i < oldLines.length ? oldLines[i] : undefined
+    const nl = i < newLines.length ? newLines[i] : undefined
+    if (ol === nl) lines.push({ type: "unchanged", num: i + 1, old: ol, new: nl })
+    else if (ol === undefined) lines.push({ type: "added", num: i + 1, new: nl })
+    else if (nl === undefined) lines.push({ type: "removed", num: i + 1, old: ol })
+    else lines.push({ type: "changed", num: i + 1, old: ol, new: nl })
+  }
+
+  return (
+    <div className="rounded-lg border">
+      <div className="flex items-center justify-between border-b bg-muted/50 px-4 py-2">
+        <span className="text-sm font-medium">Template: {change.template_name}</span>
+        <span className="text-xs text-muted-foreground">
+          v{change.base_version_id} → proposed
+        </span>
+      </div>
+      <div className="max-h-[500px] overflow-auto font-mono text-sm">
+        {lines.map((line, i) => {
+          if (line.type === "changed") {
+            return (
+              <div key={i}>
+                <div className="flex bg-red-50 dark:bg-red-950/20">
+                  <span className="w-10 shrink-0 select-none px-2 py-0.5 text-right text-xs text-muted-foreground">{line.num}</span>
+                  <span className="px-2 py-0.5 text-red-700 dark:text-red-400 whitespace-pre">- {line.old}</span>
+                </div>
+                <div className="flex bg-green-50 dark:bg-green-950/20">
+                  <span className="w-10 shrink-0 select-none px-2 py-0.5 text-right text-xs text-muted-foreground">{line.num}</span>
+                  <span className="px-2 py-0.5 text-green-700 dark:text-green-400 whitespace-pre">+ {line.new}</span>
+                </div>
+              </div>
+            )
+          }
+          const bg =
+            line.type === "added" ? "bg-green-50 dark:bg-green-950/20"
+            : line.type === "removed" ? "bg-red-50 dark:bg-red-950/20"
+            : ""
+          const prefix = line.type === "added" ? "+ " : line.type === "removed" ? "- " : "  "
+          const textColor =
+            line.type === "added" ? "text-green-700 dark:text-green-400"
+            : line.type === "removed" ? "text-red-700 dark:text-red-400"
+            : ""
+          const content = line.type === "removed" ? line.old : (line.new ?? line.old)
+
+          return (
+            <div key={i} className={`flex ${bg}`}>
+              <span className="w-10 shrink-0 select-none px-2 py-0.5 text-right text-xs text-muted-foreground">{line.num}</span>
+              <span className={`px-2 py-0.5 whitespace-pre ${textColor}`}>{prefix}{content}</span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function KvDiffCard({ change }: { change: PRChange }) {
   const globalValuesName = change.object_type === "global_values" ? change.global_values_name : null
   const { data: currentGV } = useGlobalValue(globalValuesName ?? "")
 
@@ -51,9 +120,7 @@ function ChangeCard({ change }: { change: PRChange }) {
   const label =
     change.object_type === "global_values"
       ? `Global Values: ${change.global_values_name}`
-      : change.object_type === "template"
-        ? `Template: ${change.template_name}`
-        : `Values: ${change.template_name}`
+      : `Values: ${change.template_name}`
 
   return (
     <div className="rounded-lg border">
@@ -108,12 +175,20 @@ function ChangeCard({ change }: { change: PRChange }) {
   )
 }
 
+function ChangeCard({ change, projectName }: { change: PRChange; projectName: string }) {
+  if (change.object_type === "template") {
+    return <TemplateDiffCard change={change} projectName={projectName} />
+  }
+  return <KvDiffCard change={change} />
+}
+
 export default function PRDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const prId = Number(id)
   const { user } = useAuth()
   const { data: pr, isLoading, error } = usePullRequest(prId)
+  const { data: projects } = useProjects()
   const closePR = useClosePullRequest()
   const mergePR = useMergePullRequest()
   const approvePR = useApprovePullRequest()
@@ -205,6 +280,9 @@ export default function PRDetailPage() {
   }
 
   const activeApprovals = pr.approvals?.filter((a) => !a.withdrawn_at) ?? []
+  const projectName = pr.project_id
+    ? projects?.items.find((p) => p.id === pr.project_id)?.name ?? ""
+    : ""
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -260,7 +338,7 @@ export default function PRDetailPage() {
         </h2>
         {pr.changes && pr.changes.length > 0 ? (
           pr.changes.map((change) => (
-            <ChangeCard key={change.id} change={change} />
+            <ChangeCard key={change.id} change={change} projectName={projectName} />
           ))
         ) : (
           <p className="text-sm text-muted-foreground">No changes.</p>
