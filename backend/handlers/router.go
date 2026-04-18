@@ -144,6 +144,13 @@ func NewRouter(db *sql.DB, jwtSecret []byte) chi.Router {
 			r.Post("/{prID}/merge", pr.Merge)
 			r.Post("/{prID}/approve", pr.Approve)
 			r.Post("/{prID}/withdraw-approval", pr.WithdrawApproval)
+			r.Post("/{prID}/submit", pr.SubmitDraft)
+		})
+
+		// --- Workspace ---
+		r.Route("/workspace/{projectName}", func(r chi.Router) {
+			r.Get("/draft", pr.GetActiveDraft)
+			r.Post("/stage", pr.StageChange)
 		})
 
 		// --- Roles (non-project-scoped operations by role ID) ---

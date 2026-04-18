@@ -83,10 +83,12 @@ Each change shows:
 | Values | JSON diff, pretty-printed with stable key ordering |
 | Global Values | JSON diff, same as values |
 
-### Adding Changes (author only, draft/open)
-Only the **PR author** can add or update changes. A user may only have **one active (draft/open/approved) PR per project**, so there is no ambiguity about which PR a change belongs to. Other users cannot modify someone else's PR — they can only review and approve. The **"+ Add Change"** button (visible only to the author) offers:
-- **Edit a template** — opens the template editor, saves to this PR instead of directly
-- **Edit values** — opens the values editor for a (template, env) pair, saves to this PR
+### Adding Changes (author only)
+Only the **PR author** can add or update changes. A user may only have **one active (draft/open/approved) PR per project**, so there is no ambiguity about which PR a change belongs to. Other users cannot modify someone else's PR — they can only review and approve.
+
+Changes are added to the PR automatically whenever the author saves a template or environment values edit within the project (see project-page and project-env-page). The author can also navigate directly to the relevant editors from the PR detail page:
+- **Edit a template** — opens the template editor; saves go to this PR
+- **Edit values** — opens the values editor for a (template, env) pair; saves go to this PR
 
 Note: Global Values changes are handled in separate **Global Values PRs**, each scoped to a single Global Values entry with its own approval condition (see global-values-detail-page). Project PRs cannot include Global Values changes.
 

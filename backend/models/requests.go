@@ -88,3 +88,15 @@ type CreatePullRequestRequest struct {
 	GlobalValuesName *string `json:"global_values_name"`
 	ProposedPayload  string  `json:"proposed_payload"`
 }
+
+type StageChangeRequest struct {
+	ObjectType      string `json:"object_type"`
+	TemplateName    string `json:"template_name,omitempty"`
+	EnvironmentName string `json:"environment_name,omitempty"`
+	ProposedPayload string `json:"proposed_payload"`
+}
+
+type SubmitDraftRequest struct {
+	Title       string  `json:"title"`
+	Description *string `json:"description"`
+}

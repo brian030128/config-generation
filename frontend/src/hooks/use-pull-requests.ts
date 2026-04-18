@@ -61,6 +61,46 @@ export function useApprovePullRequest() {
   })
 }
 
+export const workspaceKeys = {
+  draft: (projectName: string) => ["workspace", projectName, "draft"] as const,
+}
+
+export function useActiveDraft(projectName: string) {
+  return useQuery({
+    queryKey: workspaceKeys.draft(projectName),
+    queryFn: () => pullRequestsApi.getActiveDraft(projectName),
+    enabled: !!projectName,
+  })
+}
+
+export function useStageChange(projectName: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (req: {
+      object_type: string
+      template_name: string
+      environment_name?: string
+      proposed_payload: string
+    }) => pullRequestsApi.stageChange(projectName, req),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: workspaceKeys.draft(projectName) })
+      qc.invalidateQueries({ queryKey: pullRequestKeys.all })
+    },
+  })
+}
+
+export function useSubmitDraft() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (params: { id: number; title: string; description?: string }) =>
+      pullRequestsApi.submitDraft(params.id, { title: params.title, description: params.description }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: pullRequestKeys.all })
+      qc.invalidateQueries({ queryKey: ["workspace"] })
+    },
+  })
+}
+
 export function useWithdrawApproval() {
   const qc = useQueryClient()
   return useMutation({

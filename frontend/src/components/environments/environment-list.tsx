@@ -8,11 +8,13 @@ import { ChevronRight } from "lucide-react"
 interface EnvironmentListProps {
   projectName: string
   templateCount: number
+  workspaceMode?: boolean
 }
 
 export function EnvironmentList({
   projectName,
   templateCount,
+  workspaceMode,
 }: EnvironmentListProps) {
   const { data: envData, isLoading: envsLoading } = useEnvironments()
   const environments = envData?.items ?? []
@@ -55,7 +57,7 @@ export function EnvironmentList({
         {envsWithStatus.map(({ env, valuesCount, isLoading }) => (
           <Link
             key={env.id}
-            to={`/projects/${projectName}/env/${env.name}`}
+            to={workspaceMode ? `/workspace/${projectName}/env/${env.name}` : `/projects/${projectName}/env/${env.name}`}
             className="flex items-center justify-between rounded-lg border px-4 py-3 transition-colors hover:bg-accent/50"
           >
             <div className="flex items-center gap-4">

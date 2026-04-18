@@ -4,9 +4,16 @@ import { formatRelativeTime } from "@/lib/utils"
 import { TemplateEditor } from "./template-editor"
 import { CreateTemplateDialog } from "./create-template-dialog"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Pencil } from "lucide-react"
 
-export function TemplateList({ projectName }: { projectName: string }) {
+interface TemplateListProps {
+  projectName: string
+  workspaceMode?: boolean
+  modifiedTemplates?: Set<string | null>
+}
+
+export function TemplateList({ projectName, workspaceMode, modifiedTemplates }: TemplateListProps) {
   const { data, isLoading } = useTemplates(projectName)
   const [editingTemplate, setEditingTemplate] = useState<string | null>(null)
 
@@ -41,6 +48,9 @@ export function TemplateList({ projectName }: { projectName: string }) {
                 <span className="text-xs text-muted-foreground">
                   {formatRelativeTime(t.created_at)}
                 </span>
+                {modifiedTemplates?.has(t.template_name) && (
+                  <Badge variant="secondary" className="text-xs">modified</Badge>
+                )}
               </div>
               <Button
                 variant="ghost"

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/brian/config-generation/backend/models"
+	"github.com/go-chi/chi/v5"
 )
 
 type PullRequestHandler struct {
@@ -447,31 +448,10 @@ func (h *PullRequestHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT id, pr_id, object_type, project_id, template_name,
-		       environment_id, global_values_name, base_version_id,
-		       proposed_payload, created_at
-		FROM pr_changes WHERE pr_id = $1
-		ORDER BY id
-	`, prID)
+	pr.Changes, err = h.loadChanges(r.Context(), pr.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "database error", "internal")
 		return
-	}
-	defer rows.Close()
-
-	pr.Changes = []models.PRChange{}
-	for rows.Next() {
-		var c models.PRChange
-		if err := rows.Scan(
-			&c.ID, &c.PRID, &c.ObjectType, &c.ProjectID, &c.TemplateName,
-			&c.EnvironmentID, &c.GlobalValuesName, &c.BaseVersionID,
-			&c.ProposedPayload, &c.CreatedAt,
-		); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
-			return
-		}
-		pr.Changes = append(pr.Changes, c)
 	}
 
 	// Load approval condition.
@@ -696,6 +676,369 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 
 	pr.Changes = changes
 	writeJSON(w, http.StatusOK, pr)
+}
+
+// GetActiveDraft returns the user's active (draft/open/approved) PR for a project,
+// or creates a new draft if none exists.
+func (h *PullRequestHandler) GetActiveDraft(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r)
+	projectName := chi.URLParam(r, "projectName")
+
+	// Resolve project ID.
+	var projectID int64
+	err := h.DB.QueryRowContext(r.Context(), `SELECT id FROM projects WHERE name = $1`, projectName).Scan(&projectID)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+
+	// Look for an existing active PR.
+	var pr models.PullRequest
+	err = h.DB.QueryRowContext(r.Context(), `
+		SELECT id, project_id, global_values_name, author_id, title, description, status,
+		       is_conflicted, created_at, updated_at, merged_at, closed_at
+		FROM pull_requests
+		WHERE project_id = $1 AND author_id = $2 AND status IN ('draft', 'open', 'approved')
+		ORDER BY created_at DESC LIMIT 1
+	`, projectID, user.UserID).Scan(
+		&pr.ID, &pr.ProjectID, &pr.GlobalValuesName, &pr.AuthorID, &pr.Title, &pr.Description,
+		&pr.Status, &pr.IsConflicted, &pr.CreatedAt, &pr.UpdatedAt,
+		&pr.MergedAt, &pr.ClosedAt,
+	)
+	if err != nil && err != sql.ErrNoRows {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+
+	if err == sql.ErrNoRows {
+		// Create a new draft.
+		err = h.DB.QueryRowContext(r.Context(), `
+			INSERT INTO pull_requests (project_id, author_id, title, description, status)
+			VALUES ($1, $2, '', NULL, 'draft')
+			RETURNING id, project_id, global_values_name, author_id, title, description, status,
+			          is_conflicted, created_at, updated_at, merged_at, closed_at
+		`, projectID, user.UserID).Scan(
+			&pr.ID, &pr.ProjectID, &pr.GlobalValuesName, &pr.AuthorID, &pr.Title, &pr.Description,
+			&pr.Status, &pr.IsConflicted, &pr.CreatedAt, &pr.UpdatedAt,
+			&pr.MergedAt, &pr.ClosedAt,
+		)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to create draft", "internal")
+			return
+		}
+	}
+
+	// Load changes.
+	pr.Changes, err = h.loadChanges(r.Context(), pr.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+
+	// Load approval condition.
+	condition, err := h.loadApprovalCondition(r.Context(), &pr)
+	if err != nil && err != sql.ErrNoRows {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+	pr.ApprovalCondition = condition
+
+	// Load approvals.
+	pr.Approvals, err = h.loadApprovals(r.Context(), pr.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, pr)
+}
+
+// StageChange adds or updates a change in the user's active PR for a project.
+func (h *PullRequestHandler) StageChange(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r)
+	projectName := chi.URLParam(r, "projectName")
+
+	var req models.StageChangeRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body", "bad_request")
+		return
+	}
+	if req.ObjectType != "template" && req.ObjectType != "values" {
+		writeError(w, http.StatusBadRequest, "object_type must be 'template' or 'values'", "validation")
+		return
+	}
+	if req.ProposedPayload == "" {
+		writeError(w, http.StatusBadRequest, "proposed_payload is required", "validation")
+		return
+	}
+	if req.TemplateName == "" {
+		writeError(w, http.StatusBadRequest, "template_name is required", "validation")
+		return
+	}
+
+	// Resolve project.
+	var projectID int64
+	err := h.DB.QueryRowContext(r.Context(), `SELECT id FROM projects WHERE name = $1`, projectName).Scan(&projectID)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+
+	tx, err := h.DB.BeginTx(r.Context(), nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+	defer tx.Rollback()
+
+	// Find or create the user's active PR for this project.
+	var pr models.PullRequest
+	err = tx.QueryRowContext(r.Context(), `
+		SELECT id, project_id, global_values_name, author_id, title, description, status,
+		       is_conflicted, created_at, updated_at, merged_at, closed_at
+		FROM pull_requests
+		WHERE project_id = $1 AND author_id = $2 AND status IN ('draft', 'open', 'approved')
+		ORDER BY created_at DESC LIMIT 1
+		FOR UPDATE
+	`, projectID, user.UserID).Scan(
+		&pr.ID, &pr.ProjectID, &pr.GlobalValuesName, &pr.AuthorID, &pr.Title, &pr.Description,
+		&pr.Status, &pr.IsConflicted, &pr.CreatedAt, &pr.UpdatedAt,
+		&pr.MergedAt, &pr.ClosedAt,
+	)
+	if err == sql.ErrNoRows {
+		// Create a new draft.
+		err = tx.QueryRowContext(r.Context(), `
+			INSERT INTO pull_requests (project_id, author_id, title, description, status)
+			VALUES ($1, $2, '', NULL, 'draft')
+			RETURNING id, project_id, global_values_name, author_id, title, description, status,
+			          is_conflicted, created_at, updated_at, merged_at, closed_at
+		`, projectID, user.UserID).Scan(
+			&pr.ID, &pr.ProjectID, &pr.GlobalValuesName, &pr.AuthorID, &pr.Title, &pr.Description,
+			&pr.Status, &pr.IsConflicted, &pr.CreatedAt, &pr.UpdatedAt,
+			&pr.MergedAt, &pr.ClosedAt,
+		)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to create draft", "internal")
+			return
+		}
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+
+	// If PR was approved, reset approvals and revert to open.
+	if pr.Status == "approved" {
+		_, err = tx.ExecContext(r.Context(), `
+			UPDATE pr_approvals SET withdrawn_at = NOW() WHERE pr_id = $1 AND withdrawn_at IS NULL
+		`, pr.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			return
+		}
+		_, err = tx.ExecContext(r.Context(), `
+			UPDATE pull_requests SET status = 'open', updated_at = NOW() WHERE id = $1
+		`, pr.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			return
+		}
+		pr.Status = "open"
+	}
+
+	// Determine the base version ID.
+	var baseVersionID int
+	if req.ObjectType == "template" {
+		err = tx.QueryRowContext(r.Context(), `
+			SELECT COALESCE(
+				(SELECT version_id FROM project_config_templates
+				 WHERE project_id = $1 AND template_name = $2
+				 ORDER BY version_id DESC LIMIT 1),
+			0)
+		`, projectID, req.TemplateName).Scan(&baseVersionID)
+	} else {
+		// values — need to resolve environment ID.
+		if req.EnvironmentName == "" {
+			writeError(w, http.StatusBadRequest, "environment_name is required for values changes", "validation")
+			return
+		}
+		var envID int64
+		err = tx.QueryRowContext(r.Context(), `SELECT id FROM environments WHERE name = $1`, req.EnvironmentName).Scan(&envID)
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "environment not found", "not_found")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			return
+		}
+		err = tx.QueryRowContext(r.Context(), `
+			SELECT COALESCE(
+				(SELECT version_id FROM project_config_values
+				 WHERE project_id = $1 AND template_name = $2 AND environment_id = $3
+				 ORDER BY version_id DESC LIMIT 1),
+			0)
+		`, projectID, req.TemplateName, envID).Scan(&baseVersionID)
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+
+	// Upsert the change: delete existing change for same object, then insert new one.
+	if req.ObjectType == "template" {
+		_, err = tx.ExecContext(r.Context(), `
+			DELETE FROM pr_changes WHERE pr_id = $1 AND object_type = 'template' AND template_name = $2
+		`, pr.ID, req.TemplateName)
+	} else {
+		var envID int64
+		tx.QueryRowContext(r.Context(), `SELECT id FROM environments WHERE name = $1`, req.EnvironmentName).Scan(&envID)
+		_, err = tx.ExecContext(r.Context(), `
+			DELETE FROM pr_changes WHERE pr_id = $1 AND object_type = 'values'
+			AND template_name = $2 AND environment_id = $3
+		`, pr.ID, req.TemplateName, envID)
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+
+	// Insert the new change.
+	if req.ObjectType == "template" {
+		_, err = tx.ExecContext(r.Context(), `
+			INSERT INTO pr_changes (pr_id, object_type, project_id, template_name, base_version_id, proposed_payload)
+			VALUES ($1, 'template', $2, $3, $4, $5)
+		`, pr.ID, projectID, req.TemplateName, baseVersionID, req.ProposedPayload)
+	} else {
+		var envID int64
+		tx.QueryRowContext(r.Context(), `SELECT id FROM environments WHERE name = $1`, req.EnvironmentName).Scan(&envID)
+		_, err = tx.ExecContext(r.Context(), `
+			INSERT INTO pr_changes (pr_id, object_type, project_id, template_name, environment_id, base_version_id, proposed_payload)
+			VALUES ($1, 'values', $2, $3, $4, $5, $6)
+		`, pr.ID, projectID, req.TemplateName, envID, baseVersionID, req.ProposedPayload)
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to stage change", "internal")
+		return
+	}
+
+	// Update PR timestamp.
+	_, err = tx.ExecContext(r.Context(), `UPDATE pull_requests SET updated_at = NOW() WHERE id = $1`, pr.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to commit", "internal")
+		return
+	}
+
+	// Reload the full PR with changes.
+	pr.Changes, _ = h.loadChanges(r.Context(), pr.ID)
+	writeJSON(w, http.StatusOK, pr)
+}
+
+// SubmitDraft transitions a draft PR to open with a title and description.
+func (h *PullRequestHandler) SubmitDraft(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r)
+	prID, err := urlParamInt64(r, "prID")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid PR ID", "bad_request")
+		return
+	}
+
+	var req models.SubmitDraftRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body", "bad_request")
+		return
+	}
+	if req.Title == "" {
+		writeError(w, http.StatusBadRequest, "title is required", "validation")
+		return
+	}
+
+	var pr models.PullRequest
+	err = h.DB.QueryRowContext(r.Context(), `
+		SELECT id, project_id, global_values_name, author_id, title, description, status,
+		       is_conflicted, created_at, updated_at, merged_at, closed_at
+		FROM pull_requests WHERE id = $1
+	`, prID).Scan(
+		&pr.ID, &pr.ProjectID, &pr.GlobalValuesName, &pr.AuthorID, &pr.Title, &pr.Description,
+		&pr.Status, &pr.IsConflicted, &pr.CreatedAt, &pr.UpdatedAt,
+		&pr.MergedAt, &pr.ClosedAt,
+	)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "pull request not found", "not_found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+
+	if pr.AuthorID != user.UserID {
+		writeError(w, http.StatusForbidden, "only the author can submit a draft", "forbidden")
+		return
+	}
+	if pr.Status != "draft" {
+		writeError(w, http.StatusConflict, "pull request is not a draft", "conflict")
+		return
+	}
+
+	err = h.DB.QueryRowContext(r.Context(), `
+		UPDATE pull_requests SET title = $2, description = $3, status = 'open', updated_at = NOW()
+		WHERE id = $1
+		RETURNING id, project_id, global_values_name, author_id, title, description, status,
+		          is_conflicted, created_at, updated_at, merged_at, closed_at
+	`, prID, req.Title, req.Description).Scan(
+		&pr.ID, &pr.ProjectID, &pr.GlobalValuesName, &pr.AuthorID, &pr.Title, &pr.Description,
+		&pr.Status, &pr.IsConflicted, &pr.CreatedAt, &pr.UpdatedAt,
+		&pr.MergedAt, &pr.ClosedAt,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to submit draft", "internal")
+		return
+	}
+
+	pr.Changes, _ = h.loadChanges(r.Context(), pr.ID)
+	writeJSON(w, http.StatusOK, pr)
+}
+
+// loadChanges fetches all changes for a PR.
+func (h *PullRequestHandler) loadChanges(ctx context.Context, prID int64) ([]models.PRChange, error) {
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT id, pr_id, object_type, project_id, template_name,
+		       environment_id, global_values_name, base_version_id,
+		       proposed_payload, created_at
+		FROM pr_changes WHERE pr_id = $1
+		ORDER BY id
+	`, prID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	changes := []models.PRChange{}
+	for rows.Next() {
+		var c models.PRChange
+		if err := rows.Scan(
+			&c.ID, &c.PRID, &c.ObjectType, &c.ProjectID, &c.TemplateName,
+			&c.EnvironmentID, &c.GlobalValuesName, &c.BaseVersionID,
+			&c.ProposedPayload, &c.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		changes = append(changes, c)
+	}
+	return changes, rows.Err()
 }
 
 func (h *PullRequestHandler) List(w http.ResponseWriter, r *http.Request) {

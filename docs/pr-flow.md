@@ -59,7 +59,7 @@ draft ──> open ──> approved ──> merged
 
 ### 3.1 Status Transitions
 
-- **draft -> open**: The author submits the PR for review.
+- **draft -> open**: The author submits the PR for review by providing a title and optional description. For Project PRs, the draft is auto-created when the user first saves a change; the user explicitly submits it when ready.
 - **open -> approved**: The approval condition is met (see section 5). This transition is automatic — no manual action is required.
 - **approved -> open**: The author pushes additional changes to the PR after it was approved. All existing approvals are invalidated, and the PR returns to `open` for re-review.
 - **approved -> merged**: The author clicks the **Merge** button (see section 6).
@@ -67,9 +67,28 @@ draft ──> open ──> approved ──> merged
 
 ---
 
-## 4. Creating a PR
+## 4. Creating and Editing PRs
 
-Any user with write permission on at least one of the objects being changed may create a PR. The system validates at creation time that the author holds the necessary write (or create) permissions for every object included in the PR.
+### 4.1 Project PRs — Draft-First Editing
+
+All modifications to a project's versioned objects (templates, environment values) are saved to a **draft PR** rather than applied directly. The draft accumulates changes over time until the author is ready to submit it for review.
+
+- When a user edits a template or environment values within a project, the change is staged in their **active draft PR**. If no draft exists, one is auto-created.
+- A user may have at most **one active** (draft/open/approved) **PR per project** at a time. All edits within the project go to that single PR.
+- The user can continue making edits across multiple templates and environments; each change is added to (or updates an existing change in) the same PR.
+- When the user is satisfied, they submit the draft for review (transition from `draft` to `open`), at which point they provide a title and description.
+- After submitting, the user may **continue editing** the PR in the same way — further changes are added to the open/approved PR.
+- If the PR is already `approved` when the user pushes new changes, **all approvals are reset** and the PR returns to `open` for re-review (see §3.1).
+
+This approach avoids branching and merge strategies — a limitation that may be revisited in future updates.
+
+### 4.2 Global Values PRs
+
+Global Values PRs are created explicitly when the user clicks "Save to PR" on the Global Values detail page (see the Global Values Detail Page spec). They are scoped to a single entry.
+
+A user may have at most **one active** (draft/open/approved) **Global Values PR per entry**.
+
+### 4.3 PR Data Model
 
 A PR contains:
 
@@ -77,13 +96,11 @@ A PR contains:
 - `project` — the owning project (Project PRs only; null for Global Values PRs).
 - `global_values_name` — the target Global Values entry (Global Values PRs only; null for Project PRs).
 - `author` — the user who created the PR.
-- `title` — short summary of the change.
+- `title` — short summary of the change (set when submitting draft for review).
 - `description` — optional free-text body.
 - `status` — current lifecycle status.
 - `changes` — list of proposed object snapshots (see section 2).
 - `created_at`, `updated_at` — timestamps.
-
-A user may have at most **one active** (draft/open/approved) **Global Values PR per entry**.
 
 ---
 

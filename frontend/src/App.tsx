@@ -10,6 +10,9 @@ import GlobalValuesDetailPage from "@/pages/global-values-detail"
 import CreatePRPage from "@/pages/create-pr"
 import PullRequestsPage from "@/pages/pull-requests-page"
 import PRDetailPage from "@/pages/pr-detail-page"
+import WorkspacePage from "@/pages/workspace-page"
+import WorkspaceProjectPage from "@/pages/workspace-project-page"
+import WorkspaceEnvPage from "@/pages/workspace-env-page"
 
 const router = createBrowserRouter([
   {
@@ -25,6 +28,9 @@ const router = createBrowserRouter([
       { path: "global-values/:name/create-pr", element: <CreatePRPage /> },
       { path: "pull-requests", element: <PullRequestsPage /> },
       { path: "pull-requests/:id", element: <PRDetailPage /> },
+      { path: "workspace", element: <WorkspacePage /> },
+      { path: "workspace/:name", element: <WorkspaceProjectPage /> },
+      { path: "workspace/:name/env/:env", element: <WorkspaceEnvPage /> },
     ],
   },
   { path: "/login", element: <LoginPage /> },

@@ -7,6 +7,7 @@ Sidebar (persistent)
 ├── Projects          → project-listpage
 ├── Global Values     → global-values-listpage
 ├── Pull Requests     → pull-requests-page
+├── Workspace         → workspace-page
 └── User Menu
     └── Role Management (admin only)
 
@@ -18,10 +19,14 @@ Top Bar
 
 ```
 project-listpage
-  └── project-page (click a project)
-        ├── template-editor (click a template)
-        └── project-env-page (click an environment)
+  └── project-page (click a project) — read-only view of current live state
+        └── project-env-page (click an environment) — read-only live values
               └── deployment-review-page (click "Review Deployment")
+
+workspace-page — lists the user's active draft/PR per project
+  └── workspace-project-page (click a project workspace)
+        ├── template-editor (edit a template) — saves to draft PR
+        └── workspace-env-page (edit environment values) — saves to draft PR
 
 global-values-listpage
   └── global-values-detail-page (click an entry)
@@ -35,7 +40,7 @@ role-management-page (admin)
 ## Core User Journeys
 
 ### 1. Author a config change
-project-listpage → project-page → edit template or click environment → project-env-page → edit values → create PR
+workspace-page → select project (or start new workspace) → edit templates / environment values → changes accumulate in draft PR → submit PR for review
 
 ### 2. Review and merge a PR
 pull-requests-page → pr-detail-page → inspect diffs → approve → author merges

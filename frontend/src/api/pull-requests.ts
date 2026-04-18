@@ -30,4 +30,18 @@ export const pullRequestsApi = {
     client
       .post<PullRequest>(`/pull-requests/${id}/withdraw-approval`)
       .then((r) => r.data),
+
+  submitDraft: (id: number, req: { title: string; description?: string }) =>
+    client.post<PullRequest>(`/pull-requests/${id}/submit`, req).then((r) => r.data),
+
+  getActiveDraft: (projectName: string) =>
+    client.get<PullRequest>(`/workspace/${projectName}/draft`).then((r) => r.data),
+
+  stageChange: (projectName: string, req: {
+    object_type: string
+    template_name: string
+    environment_name?: string
+    proposed_payload: string
+  }) =>
+    client.post<PullRequest>(`/workspace/${projectName}/stage`, req).then((r) => r.data),
 }

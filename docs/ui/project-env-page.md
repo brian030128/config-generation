@@ -2,7 +2,7 @@
 
 **Route:** `/projects/:projectName/env/:envName`
 
-Shows all config values for a specific `(project, environment)` pair, organized by template. This is where authors edit values and where deployments are initiated.
+Shows all config values for a specific `(project, environment)` pair, organized by template. This page displays the **current live state** (read-only). To edit values, use the **Workspace** (see workspace-page). Deployments are initiated from this page.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -26,8 +26,7 @@ Shows all config values for a specific `(project, environment)` pair, organized 
 │  │  feature_flags    │  (nested object — expand ▸)   │         │    │
 │  └─────────────────────────────────────────────────────────────┘    │
 │                                                                     │
-│  Commit message: [___________________________]                      │
-│                                              [Save]  [Save to PR]   │
+│                                                                     │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -73,18 +72,11 @@ For nested JSON values (like `feature_flags`), the row is expandable. Clicking t
 
 ---
 
-## 3. Save Actions
+## 3. Editing
 
-### "Save" Button
-Directly appends a new version of the Project Config Value. Requires `write:project_values(project, env)`. The commit message field is optional.
+This page is read-only. Values are displayed but cannot be edited directly. To make changes, navigate to the Workspace via the sidebar or the banner shown when the user has an active draft/PR for this project.
 
-### "Save to PR" Button
-Instead of saving directly, adds the change to a PR. A user may only have **one active (draft/open/approved) PR per project** at a time.
-
-- If the user **has no active PR** for this project → opens a dialog to create one (title + description), then stages the change.
-- If the user **already has an active PR** → the change is added to it directly (no selection needed).
-
-The change is staged in the PR without modifying the latest version. The value only becomes "latest" when the PR is merged. If the PR already contains a change for this same object, the new snapshot replaces the previous one.
+Editing happens on the **Workspace Environment Page** (`/workspace/:projectName/env/:envName`), which has the same layout but is editable and saves to the user's draft PR.
 
 ---
 

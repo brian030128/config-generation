@@ -2,7 +2,9 @@
 
 **Route:** `/projects/:projectName`
 
-The main hub for a project. Two tabbed sections: **Templates** and **Environments**.
+The main hub for a project, showing the **current live state** (latest merged versions). This page is read-only — to make changes, use the **Workspace** (see workspace-page). If the current user has an active draft/PR for this project, a banner links to their workspace.
+
+Two tabbed sections: **Templates** and **Environments**.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -48,15 +50,13 @@ Opens a dialog:
 - **Body** — code editor (the Go template text)
 - **Commit message** — text input (optional)
 
-### Template Editor
-Clicking Edit opens the template body in a code editor with syntax highlighting. Save creates a new version (full-copy).
+### Template Viewer
+Clicking a template opens it in a read-only code viewer showing the current live version.
 
-- **Code editor** with the template body
-- **Commit message** input
-- **Save** button — appends a new version
-- **Version history** sidebar — lists all versions with author and timestamp; clicking a version loads that snapshot (read-only for non-latest)
+- **Code viewer** with the template body (read-only)
+- **Version history** sidebar — lists all versions with author and timestamp; clicking a version loads that snapshot
 
-Requires `write:project_templates(project)` to save.
+To edit, use the Workspace.
 
 ### Delete Template
 Available via a menu on each template row. Requires `write:project_templates(project)`. Confirmation dialog warns that all versions and associated values will be affected.
