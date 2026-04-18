@@ -26,7 +26,7 @@ export function AddEnvironmentDialog({
   function handleContinue() {
     if (!trimmed) return
     setOpen(false)
-    navigate(`/projects/${projectName}/env/${trimmed}`)
+    navigate(`/workspace/${projectName}/env/${trimmed}`)
   }
 
   return (
