@@ -570,12 +570,6 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Only global values PRs are supported for now.
-	if pr.GlobalValuesName == nil {
-		writeError(w, http.StatusBadRequest, "only global values PRs can be merged at this time", "validation")
-		return
-	}
-
 	// Load changes.
 	changeRows, err := tx.QueryContext(r.Context(), `
 		SELECT id, pr_id, object_type, project_id, template_name,
@@ -604,35 +598,78 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 	}
 	changeRows.Close()
 
-	// Apply each change: append a new version for the global values entry.
+	// Apply each change: append a new version for the changed object.
 	commitMsg := fmt.Sprintf("Merged from PR #%d", pr.ID)
 	for _, c := range changes {
-		if c.ObjectType != "global_values" || c.GlobalValuesName == nil {
+		switch c.ObjectType {
+		case "global_values":
+			if c.GlobalValuesName == nil {
+				continue
+			}
+			var nextVersion int
+			err = tx.QueryRowContext(r.Context(), `
+				SELECT COALESCE(
+					(SELECT version_id FROM global_values
+					 WHERE name = $1 ORDER BY version_id DESC LIMIT 1 FOR UPDATE),
+				0) + 1
+			`, *c.GlobalValuesName).Scan(&nextVersion)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "database error", "internal")
+				return
+			}
+			_, err = tx.ExecContext(r.Context(), `
+				INSERT INTO global_values (name, version_id, payload, commit_message, approval_condition, created_by)
+				VALUES ($1, $2, $3, $4,
+					(SELECT approval_condition FROM global_values WHERE name = $1 ORDER BY version_id LIMIT 1),
+					$5)
+			`, *c.GlobalValuesName, nextVersion, c.ProposedPayload, commitMsg, pr.AuthorID)
+
+		case "template":
+			if c.ProjectID == nil || c.TemplateName == nil {
+				continue
+			}
+			var nextVersion int
+			err = tx.QueryRowContext(r.Context(), `
+				SELECT COALESCE(
+					(SELECT version_id FROM project_config_templates
+					 WHERE project_id = $1 AND template_name = $2
+					 ORDER BY version_id DESC LIMIT 1 FOR UPDATE),
+				0) + 1
+			`, *c.ProjectID, *c.TemplateName).Scan(&nextVersion)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "database error", "internal")
+				return
+			}
+			_, err = tx.ExecContext(r.Context(), `
+				INSERT INTO project_config_templates (project_id, template_name, version_id, body, commit_message, created_by)
+				VALUES ($1, $2, $3, $4, $5, $6)
+			`, *c.ProjectID, *c.TemplateName, nextVersion, c.ProposedPayload, commitMsg, pr.AuthorID)
+
+		case "values":
+			if c.ProjectID == nil || c.TemplateName == nil || c.EnvironmentID == nil {
+				continue
+			}
+			var nextVersion int
+			err = tx.QueryRowContext(r.Context(), `
+				SELECT COALESCE(
+					(SELECT version_id FROM project_config_values
+					 WHERE project_id = $1 AND template_name = $2 AND environment_id = $3
+					 ORDER BY version_id DESC LIMIT 1 FOR UPDATE),
+				0) + 1
+			`, *c.ProjectID, *c.TemplateName, *c.EnvironmentID).Scan(&nextVersion)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "database error", "internal")
+				return
+			}
+			_, err = tx.ExecContext(r.Context(), `
+				INSERT INTO project_config_values (project_id, template_name, environment_id, version_id, payload, commit_message, created_by)
+				VALUES ($1, $2, $3, $4, $5, $6, $7)
+			`, *c.ProjectID, *c.TemplateName, *c.EnvironmentID, nextVersion, c.ProposedPayload, commitMsg, pr.AuthorID)
+
+		default:
 			continue
 		}
 
-		// Get the next version ID.
-		var nextVersion int
-		err = tx.QueryRowContext(r.Context(), `
-			SELECT COALESCE(
-				(SELECT version_id FROM global_values
-				 WHERE name = $1
-				 ORDER BY version_id DESC LIMIT 1
-				 FOR UPDATE),
-			0) + 1
-		`, *c.GlobalValuesName).Scan(&nextVersion)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
-			return
-		}
-
-		// Insert the new version.
-		_, err = tx.ExecContext(r.Context(), `
-			INSERT INTO global_values (name, version_id, payload, commit_message, approval_condition, created_by)
-			VALUES ($1, $2, $3, $4,
-				(SELECT approval_condition FROM global_values WHERE name = $1 ORDER BY version_id LIMIT 1),
-				$5)
-		`, *c.GlobalValuesName, nextVersion, c.ProposedPayload, commitMsg, pr.AuthorID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to create new version", "internal")
 			return
@@ -656,17 +693,19 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Auto-close all other unmerged PRs on the same global values entry.
-	_, err = tx.ExecContext(r.Context(), `
-		UPDATE pull_requests
-		SET status = 'closed', closed_at = NOW(), updated_at = NOW()
-		WHERE global_values_name = $1
-		  AND id != $2
-		  AND status IN ('draft', 'open', 'approved')
-	`, *pr.GlobalValuesName, prID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to auto-close other PRs", "internal")
-		return
+	// Auto-close other unmerged PRs on the same scope.
+	if pr.GlobalValuesName != nil {
+		_, err = tx.ExecContext(r.Context(), `
+			UPDATE pull_requests
+			SET status = 'closed', closed_at = NOW(), updated_at = NOW()
+			WHERE global_values_name = $1
+			  AND id != $2
+			  AND status IN ('draft', 'open', 'approved')
+		`, *pr.GlobalValuesName, prID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to auto-close other PRs", "internal")
+			return
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
