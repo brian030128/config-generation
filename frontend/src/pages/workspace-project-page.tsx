@@ -41,11 +41,6 @@ export default function WorkspaceProjectPage() {
       ?.filter((c) => c.object_type === "template")
       .map((c) => c.template_name) ?? [],
   )
-  const modifiedEnvs = new Set(
-    draft?.changes
-      ?.filter((c) => c.object_type === "values")
-      .map((c) => c.environment_id?.toString()) ?? [],
-  )
 
   function handleSubmit() {
     if (!draft || !submitTitle.trim()) return
@@ -150,7 +145,6 @@ export default function WorkspaceProjectPage() {
         <TabsContent value="templates" className="mt-4">
           <TemplateList
             projectName={name!}
-            workspaceMode
             modifiedTemplates={modifiedTemplates}
           />
         </TabsContent>

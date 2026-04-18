@@ -9,11 +9,10 @@ import { Pencil } from "lucide-react"
 
 interface TemplateListProps {
   projectName: string
-  workspaceMode?: boolean
   modifiedTemplates?: Set<string | null>
 }
 
-export function TemplateList({ projectName, workspaceMode, modifiedTemplates }: TemplateListProps) {
+export function TemplateList({ projectName, modifiedTemplates }: TemplateListProps) {
   const { data, isLoading } = useTemplates(projectName)
   const [editingTemplate, setEditingTemplate] = useState<string | null>(null)
 

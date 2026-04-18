@@ -34,10 +34,7 @@ export default function WorkspaceEnvPage() {
     }
   }, [templates, selectedTemplate])
 
-  const {
-    data: values,
-    error: valuesError,
-  } = useValues(projectName!, selectedTemplate, envName!)
+  const { data: values } = useValues(projectName!, selectedTemplate, envName!)
 
   const { data: varsData } = useTemplateVariables(projectName!, selectedTemplate)
   const variables = varsData?.variables ?? []
