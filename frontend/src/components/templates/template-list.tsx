@@ -30,7 +30,7 @@ export function TemplateList({ projectName, workspaceMode, modifiedTemplates }: 
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-medium">Templates</h3>
-        <CreateTemplateDialog projectName={projectName} />
+        {workspaceMode && <CreateTemplateDialog projectName={projectName} />}
       </div>
 
       {isLoading && (

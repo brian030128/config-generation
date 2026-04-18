@@ -90,15 +90,6 @@ export function CreateTemplateDialog({
               required
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="tmpl-commit">Commit Message</Label>
-            <Input
-              id="tmpl-commit"
-              value={commitMsg}
-              onChange={(e) => setCommitMsg(e.target.value)}
-              placeholder="Optional"
-            />
-          </div>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Cancel
