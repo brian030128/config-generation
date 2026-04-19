@@ -15,17 +15,16 @@ CREATE INDEX idx_templates_latest ON project_config_templates (project_id, templ
 CREATE TABLE project_config_values (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     project_id BIGINT NOT NULL REFERENCES projects(id),
-    template_name TEXT NOT NULL,
     environment_id BIGINT NOT NULL REFERENCES environments(id),
     version_id INTEGER NOT NULL,
     payload JSONB NOT NULL,
     commit_message TEXT,
     created_by BIGINT NOT NULL REFERENCES users(id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (project_id, template_name, environment_id, version_id)
+    UNIQUE (project_id, environment_id, version_id)
 );
 
-CREATE INDEX idx_values_latest ON project_config_values (project_id, template_name, environment_id, version_id DESC);
+CREATE INDEX idx_values_latest ON project_config_values (project_id, environment_id, version_id DESC);
 
 CREATE TABLE global_values (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

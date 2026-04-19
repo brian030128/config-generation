@@ -1,24 +1,16 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { environmentsApi } from "@/api/environments"
-import type { CreateEnvironmentRequest } from "@/api/types"
+import { projectKeys } from "./use-projects"
 
 export const environmentKeys = {
-  all: ["environments"] as const,
-  detail: (id: number) => ["environments", id] as const,
+  forProject: (project: string) =>
+    [...projectKeys.detail(project), "environments"] as const,
 }
 
-export function useEnvironments() {
+export function useEnvironments(projectName: string) {
   return useQuery({
-    queryKey: environmentKeys.all,
-    queryFn: environmentsApi.list,
-  })
-}
-
-export function useCreateEnvironment() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (req: CreateEnvironmentRequest) => environmentsApi.create(req),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: environmentKeys.all }),
+    queryKey: environmentKeys.forProject(projectName),
+    queryFn: () => environmentsApi.list(projectName),
+    enabled: !!projectName,
   })
 }

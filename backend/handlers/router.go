@@ -66,30 +66,33 @@ func NewRouter(db *sql.DB, jwtSecret []byte) chi.Router {
 							r.With(perm(db, "read", "project_templates", param("projectName"), nil, nil)).
 								Get("/{versionID}", tmpl.GetVersion)
 						})
-
-						// --- Values per (template, env) ---
-						r.Route("/envs/{envName}/values", func(r chi.Router) {
-							r.With(perm(db, "read", "project_values", param("projectName"), param("envName"), nil)).
-								Get("/", vals.GetLatest)
-
-							r.Route("/versions", func(r chi.Router) {
-								r.With(perm(db, "write", "project_values", param("projectName"), param("envName"), nil)).
-									Post("/", vals.AppendVersion)
-								r.With(perm(db, "read", "project_values", param("projectName"), param("envName"), nil)).
-									Get("/{versionID}", vals.GetVersion)
-							})
-						})
 					})
 				})
 
-				// --- Create new value set (v1) ---
+				// --- Project-level variables (union of all templates) ---
+				r.With(perm(db, "read", "project_templates", param("projectName"), nil, nil)).
+					Get("/variables", tmpl.ProjectVariables)
+
+				// --- Values per (project, env) ---
 				r.With(perm(db, "create", "env_values", param("projectName"), nil, nil)).
 					Post("/values", vals.Create)
 
-				// --- List values for (project, env) ---
 				r.Route("/envs/{envName}/values", func(r chi.Router) {
 					r.With(perm(db, "read", "project_values", param("projectName"), param("envName"), nil)).
-						Get("/", vals.ListForProjectEnv)
+						Get("/", vals.GetLatest)
+
+					r.Route("/versions", func(r chi.Router) {
+						r.With(perm(db, "write", "project_values", param("projectName"), param("envName"), nil)).
+							Post("/", vals.AppendVersion)
+						r.With(perm(db, "read", "project_values", param("projectName"), param("envName"), nil)).
+							Get("/{versionID}", vals.GetVersion)
+					})
+				})
+
+				// --- Environments (project-scoped) ---
+				r.Route("/environments", func(r chi.Router) {
+					r.Get("/", env.List)
+					r.Get("/{envName}", env.Get)
 				})
 
 				// --- Roles (project-scoped) ---
@@ -100,13 +103,6 @@ func NewRouter(db *sql.DB, jwtSecret []byte) chi.Router {
 						Get("/", role.ListForProject)
 				})
 			})
-		})
-
-		// --- Environments ---
-		r.Route("/environments", func(r chi.Router) {
-			r.Get("/", env.List)
-			r.Post("/", env.Create)
-			r.Get("/{envID}", env.Get)
 		})
 
 		// --- Global Values ---

@@ -114,14 +114,13 @@ var _ = Describe("Permission Model", func() {
 		var stagingID float64
 
 		BeforeEach(func() {
-			env := createEnvironment(aliceID, "alice", "staging")
+			env := createEnvironment(aliceID, "alice", "billing", "staging")
 			stagingID = env["id"].(float64)
 			createTemplate(aliceID, "alice", "billing", "app.yaml", "{{ .service_name }}")
 		})
 
 		It("allows alice to create new value sets (create:env_values from project_admin)", func() {
 			rec := doRequest("POST", "/api/projects/billing/values", map[string]any{
-				"template_name":  "app.yaml",
 				"environment_id": stagingID,
 				"payload":        map[string]any{"service_name": "billing"},
 			}, aliceID, "alice")
@@ -130,12 +129,11 @@ var _ = Describe("Permission Model", func() {
 
 		It("allows alice to append versions (write implied by create)", func() {
 			doRequest("POST", "/api/projects/billing/values", map[string]any{
-				"template_name":  "app.yaml",
 				"environment_id": stagingID,
 				"payload":        map[string]any{"service_name": "billing-v1"},
 			}, aliceID, "alice")
 
-			rec := doRequest("POST", "/api/projects/billing/templates/app.yaml/envs/staging/values/versions", map[string]any{
+			rec := doRequest("POST", "/api/projects/billing/envs/staging/values/versions", map[string]any{
 				"payload": map[string]any{"service_name": "billing-v2"},
 			}, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusCreated))
@@ -143,12 +141,11 @@ var _ = Describe("Permission Model", func() {
 
 		It("allows alice to read values (read implied transitively)", func() {
 			doRequest("POST", "/api/projects/billing/values", map[string]any{
-				"template_name":  "app.yaml",
 				"environment_id": stagingID,
 				"payload":        map[string]any{"service_name": "billing"},
 			}, aliceID, "alice")
 
-			rec := doRequest("GET", "/api/projects/billing/templates/app.yaml/envs/staging/values", nil, aliceID, "alice")
+			rec := doRequest("GET", "/api/projects/billing/envs/staging/values", nil, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusOK))
 		})
 	})
@@ -157,18 +154,18 @@ var _ = Describe("Permission Model", func() {
 		var stagingID, prodID float64
 
 		BeforeEach(func() {
-			env := createEnvironment(aliceID, "alice", "staging")
+			env := createEnvironment(aliceID, "alice", "billing", "staging")
 			stagingID = env["id"].(float64)
-			env = createEnvironment(aliceID, "alice", "prod")
+			env = createEnvironment(aliceID, "alice", "billing", "prod")
 			prodID = env["id"].(float64)
 			createTemplate(aliceID, "alice", "billing", "app.yaml", "{{ .env }}")
 
 			doRequest("POST", "/api/projects/billing/values", map[string]any{
-				"template_name": "app.yaml", "environment_id": stagingID,
+				"environment_id": stagingID,
 				"payload": map[string]any{"env": "staging"},
 			}, aliceID, "alice")
 			doRequest("POST", "/api/projects/billing/values", map[string]any{
-				"template_name": "app.yaml", "environment_id": prodID,
+				"environment_id": prodID,
 				"payload": map[string]any{"env": "prod"},
 			}, aliceID, "alice")
 
@@ -179,24 +176,24 @@ var _ = Describe("Permission Model", func() {
 		})
 
 		It("allows bob to write values for staging (covered by wildcard)", func() {
-			rec := doRequest("POST", "/api/projects/billing/templates/app.yaml/envs/staging/values/versions", map[string]any{
+			rec := doRequest("POST", "/api/projects/billing/envs/staging/values/versions", map[string]any{
 				"payload": map[string]any{"env": "staging-v2"},
 			}, bobID, "bob")
 			Expect(rec.Code).To(Equal(http.StatusCreated))
 		})
 
 		It("allows bob to write values for prod (also covered by wildcard)", func() {
-			rec := doRequest("POST", "/api/projects/billing/templates/app.yaml/envs/prod/values/versions", map[string]any{
+			rec := doRequest("POST", "/api/projects/billing/envs/prod/values/versions", map[string]any{
 				"payload": map[string]any{"env": "prod-v2"},
 			}, bobID, "bob")
 			Expect(rec.Code).To(Equal(http.StatusCreated))
 		})
 
 		It("allows bob to read values for any env (write implies read)", func() {
-			rec := doRequest("GET", "/api/projects/billing/templates/app.yaml/envs/staging/values", nil, bobID, "bob")
+			rec := doRequest("GET", "/api/projects/billing/envs/staging/values", nil, bobID, "bob")
 			Expect(rec.Code).To(Equal(http.StatusOK))
 
-			rec = doRequest("GET", "/api/projects/billing/templates/app.yaml/envs/prod/values", nil, bobID, "bob")
+			rec = doRequest("GET", "/api/projects/billing/envs/prod/values", nil, bobID, "bob")
 			Expect(rec.Code).To(Equal(http.StatusOK))
 		})
 	})
@@ -205,9 +202,9 @@ var _ = Describe("Permission Model", func() {
 		var stagingID, euProdID float64
 
 		BeforeEach(func() {
-			env := createEnvironment(aliceID, "alice", "staging")
+			env := createEnvironment(aliceID, "alice", "billing", "staging")
 			stagingID = env["id"].(float64)
-			env = createEnvironment(aliceID, "alice", "eu-prod")
+			env = createEnvironment(aliceID, "alice", "billing", "eu-prod")
 			euProdID = env["id"].(float64)
 			createTemplate(aliceID, "alice", "billing", "app.yaml", "{{ .env }}")
 
@@ -219,7 +216,6 @@ var _ = Describe("Permission Model", func() {
 
 		It("alice can create eu-prod values (she has create:env_values)", func() {
 			rec := doRequest("POST", "/api/projects/billing/values", map[string]any{
-				"template_name":  "app.yaml",
 				"environment_id": euProdID,
 				"payload":        map[string]any{"env": "eu-prod"},
 			}, aliceID, "alice")
@@ -228,12 +224,11 @@ var _ = Describe("Permission Model", func() {
 
 		It("bob can edit existing staging values (he has write:project_values(billing,staging))", func() {
 			doRequest("POST", "/api/projects/billing/values", map[string]any{
-				"template_name":  "app.yaml",
 				"environment_id": stagingID,
 				"payload":        map[string]any{"env": "staging"},
 			}, aliceID, "alice")
 
-			rec := doRequest("POST", "/api/projects/billing/templates/app.yaml/envs/staging/values/versions", map[string]any{
+			rec := doRequest("POST", "/api/projects/billing/envs/staging/values/versions", map[string]any{
 				"payload": map[string]any{"env": "staging-v2"},
 			}, bobID, "bob")
 			Expect(rec.Code).To(Equal(http.StatusCreated))
@@ -241,7 +236,6 @@ var _ = Describe("Permission Model", func() {
 
 		It("bob cannot create new values for eu-prod (no create:env_values)", func() {
 			rec := doRequest("POST", "/api/projects/billing/values", map[string]any{
-				"template_name":  "app.yaml",
 				"environment_id": euProdID,
 				"payload":        map[string]any{"env": "eu-prod"},
 			}, bobID, "bob")
@@ -250,12 +244,11 @@ var _ = Describe("Permission Model", func() {
 
 		It("bob cannot write values for eu-prod (no write:project_values(billing,eu-prod))", func() {
 			doRequest("POST", "/api/projects/billing/values", map[string]any{
-				"template_name":  "app.yaml",
 				"environment_id": euProdID,
 				"payload":        map[string]any{"env": "eu-prod"},
 			}, aliceID, "alice")
 
-			rec := doRequest("POST", "/api/projects/billing/templates/app.yaml/envs/eu-prod/values/versions", map[string]any{
+			rec := doRequest("POST", "/api/projects/billing/envs/eu-prod/values/versions", map[string]any{
 				"payload": map[string]any{"env": "eu-prod-v2"},
 			}, bobID, "bob")
 			Expect(rec.Code).To(Equal(http.StatusForbidden))

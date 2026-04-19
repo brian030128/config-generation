@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -11,6 +12,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Plus } from "lucide-react"
+import { useStageChange } from "@/hooks/use-pull-requests"
 
 export function AddEnvironmentDialog({
   projectName,
@@ -20,13 +22,30 @@ export function AddEnvironmentDialog({
   const [open, setOpen] = useState(false)
   const [envName, setEnvName] = useState("")
   const navigate = useNavigate()
+  const stageChange = useStageChange(projectName)
 
   const trimmed = envName.trim()
 
-  function handleContinue() {
+  function handleCreate() {
     if (!trimmed) return
-    setOpen(false)
-    navigate(`/workspace/${projectName}/env/${trimmed}`)
+    stageChange.mutate(
+      {
+        object_type: "environment",
+        proposed_payload: JSON.stringify({ name: trimmed }),
+      },
+      {
+        onSuccess: () => {
+          setOpen(false)
+          setEnvName("")
+          navigate(`/workspace/${projectName}/env/${trimmed}`)
+        },
+        onError: (err) => {
+          toast.error("Failed to stage environment", {
+            description: (err as Error).message,
+          })
+        },
+      },
+    )
   }
 
   return (
@@ -49,7 +68,7 @@ export function AddEnvironmentDialog({
               onChange={(e) => setEnvName(e.target.value)}
               placeholder="e.g. staging, production"
               onKeyDown={(e) => {
-                if (e.key === "Enter") handleContinue()
+                if (e.key === "Enter") handleCreate()
               }}
             />
           </div>
@@ -57,8 +76,8 @@ export function AddEnvironmentDialog({
             <Button variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleContinue} disabled={!trimmed}>
-              Continue
+            <Button onClick={handleCreate} disabled={!trimmed || stageChange.isPending}>
+              {stageChange.isPending ? "Creating..." : "Create Environment"}
             </Button>
           </div>
         </div>

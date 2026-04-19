@@ -24,11 +24,6 @@ var _ = Describe("Multi-Project Workflow", func() {
 		carolID = seedUser("carol", "Carol Davis")
 		seedSystemRole(aliceID)
 		seedExtraSystemRole(carolID)
-
-		env := createEnvironment(aliceID, "alice", "staging")
-		stagingID = env["id"].(float64)
-		env = createEnvironment(aliceID, "alice", "prod")
-		prodID = env["id"].(float64)
 	})
 
 	Context("a user authoring changes across multiple projects in a single session", func() {
@@ -38,6 +33,14 @@ var _ = Describe("Multi-Project Workflow", func() {
 
 			// Carol owns payments-service
 			createProject(carolID, "carol", "payments-service")
+
+			// Create environments per project
+			env := createEnvironment(aliceID, "alice", "billing-service", "staging")
+			stagingID = env["id"].(float64)
+			env = createEnvironment(aliceID, "alice", "billing-service", "prod")
+			prodID = env["id"].(float64)
+			createEnvironment(carolID, "carol", "payments-service", "staging")
+			createEnvironment(carolID, "carol", "payments-service", "prod")
 
 			// Alice grants bob write access to billing templates and staging values
 			billingDevRole := createCustomRole(aliceID, "alice", "billing-service", "billing-dev", []map[string]any{
@@ -81,30 +84,25 @@ task: {{ .task }}`)
 
 			By("alice bootstraps billing staging values (bob can't create, only write)")
 			doRequest("POST", "/api/projects/billing-service/values", map[string]any{
-				"template_name": "app.yaml", "environment_id": stagingID,
+				"environment_id": stagingID,
 				"payload": map[string]any{
 					"service_name": "billing",
 					"db_host":      "${shared_db.host}",
-				},
-			}, aliceID, "alice")
-			doRequest("POST", "/api/projects/billing-service/values", map[string]any{
-				"template_name": "worker.yaml", "environment_id": stagingID,
-				"payload": map[string]any{
-					"worker_name": "invoice-worker",
-					"concurrency": 4,
+					"worker_name":  "invoice-worker",
+					"concurrency":  4,
 				},
 			}, aliceID, "alice")
 
 			By("carol bootstraps payments staging and prod values")
 			doRequest("POST", "/api/projects/payments-service/values", map[string]any{
-				"template_name": "app.yaml", "environment_id": stagingID,
+				"environment_id": stagingID,
 				"payload": map[string]any{
 					"service_name": "payments",
 					"stripe_key":   "sk_test_xxx",
 				},
 			}, carolID, "carol")
 			doRequest("POST", "/api/projects/payments-service/values", map[string]any{
-				"template_name": "app.yaml", "environment_id": prodID,
+				"environment_id": prodID,
 				"payload": map[string]any{
 					"service_name": "payments",
 					"stripe_key":   "sk_live_xxx",
@@ -112,11 +110,13 @@ task: {{ .task }}`)
 			}, carolID, "carol")
 
 			By("bob updates billing staging values (append v2)")
-			rec := doRequest("POST", "/api/projects/billing-service/templates/app.yaml/envs/staging/values/versions", map[string]any{
+			rec := doRequest("POST", "/api/projects/billing-service/envs/staging/values/versions", map[string]any{
 				"payload": map[string]any{
 					"service_name": "billing-v2",
 					"db_host":      "${shared_db.host}",
 					"db_password":  "${shared_db.password}",
+					"worker_name":  "invoice-worker",
+					"concurrency":  4,
 				},
 				"commit_message": "Add db_password reference",
 			}, bobID, "bob")
@@ -124,7 +124,7 @@ task: {{ .task }}`)
 			Expect(decode[map[string]any](rec)["version_id"]).To(BeEquivalentTo(2))
 
 			By("bob updates payments staging values (append v2)")
-			rec = doRequest("POST", "/api/projects/payments-service/templates/app.yaml/envs/staging/values/versions", map[string]any{
+			rec = doRequest("POST", "/api/projects/payments-service/envs/staging/values/versions", map[string]any{
 				"payload": map[string]any{
 					"service_name": "payments-v2",
 					"stripe_key":   "sk_test_updated",
@@ -136,7 +136,7 @@ task: {{ .task }}`)
 			Expect(decode[map[string]any](rec)["version_id"]).To(BeEquivalentTo(2))
 
 			By("bob also updates payments prod values")
-			rec = doRequest("POST", "/api/projects/payments-service/templates/app.yaml/envs/prod/values/versions", map[string]any{
+			rec = doRequest("POST", "/api/projects/payments-service/envs/prod/values/versions", map[string]any{
 				"payload": map[string]any{
 					"service_name": "payments-v2",
 					"stripe_key":   "sk_live_updated",
@@ -160,7 +160,7 @@ db_password: {{ .db_password }}`,
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			Expect(decode[map[string]any](rec)["version_id"]).To(BeEquivalentTo(2))
 
-			rec = doRequest("GET", "/api/projects/billing-service/templates/app.yaml/envs/staging/values", nil, bobID, "bob")
+			rec = doRequest("GET", "/api/projects/billing-service/envs/staging/values", nil, bobID, "bob")
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			body := decode[map[string]any](rec)
 			Expect(body["version_id"]).To(BeEquivalentTo(2))
@@ -168,14 +168,14 @@ db_password: {{ .db_password }}`,
 			Expect(payload["db_password"]).To(Equal("${shared_db.password}"))
 
 			By("verifying payments-service state")
-			rec = doRequest("GET", "/api/projects/payments-service/templates/app.yaml/envs/staging/values", nil, bobID, "bob")
+			rec = doRequest("GET", "/api/projects/payments-service/envs/staging/values", nil, bobID, "bob")
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			body = decode[map[string]any](rec)
 			Expect(body["version_id"]).To(BeEquivalentTo(2))
 			payload = body["payload"].(map[string]any)
 			Expect(payload["redis_host"]).To(Equal("${shared_redis.host}"))
 
-			rec = doRequest("GET", "/api/projects/payments-service/templates/app.yaml/envs/prod/values", nil, bobID, "bob")
+			rec = doRequest("GET", "/api/projects/payments-service/envs/prod/values", nil, bobID, "bob")
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			Expect(decode[map[string]any](rec)["version_id"]).To(BeEquivalentTo(2))
 		})
@@ -186,24 +186,24 @@ db_password: {{ .db_password }}`,
 
 			// Alice bootstraps billing prod values
 			doRequest("POST", "/api/projects/billing-service/values", map[string]any{
-				"template_name": "app.yaml", "environment_id": prodID,
+				"environment_id": prodID,
 				"payload": map[string]any{"env": "prod"},
 			}, aliceID, "alice")
 
 			By("bob CANNOT write billing prod values (only has staging)")
-			rec := doRequest("POST", "/api/projects/billing-service/templates/app.yaml/envs/prod/values/versions", map[string]any{
+			rec := doRequest("POST", "/api/projects/billing-service/envs/prod/values/versions", map[string]any{
 				"payload": map[string]any{"env": "prod-v2"},
 			}, bobID, "bob")
 			Expect(rec.Code).To(Equal(http.StatusForbidden))
 
 			By("bob CAN write payments prod values (has wildcard env)")
 			carolBootstraps := doRequest("POST", "/api/projects/payments-service/values", map[string]any{
-				"template_name": "app.yaml", "environment_id": prodID,
+				"environment_id": prodID,
 				"payload": map[string]any{"env": "prod"},
 			}, carolID, "carol")
 			Expect(carolBootstraps.Code).To(Equal(http.StatusCreated))
 
-			rec = doRequest("POST", "/api/projects/payments-service/templates/app.yaml/envs/prod/values/versions", map[string]any{
+			rec = doRequest("POST", "/api/projects/payments-service/envs/prod/values/versions", map[string]any{
 				"payload": map[string]any{"env": "prod-v2"},
 			}, bobID, "bob")
 			Expect(rec.Code).To(Equal(http.StatusCreated))
@@ -273,7 +273,7 @@ db_password: {{ .db_password }}`,
 
 			By("alice creates billing staging values referencing shared_db")
 			doRequest("POST", "/api/projects/billing-service/values", map[string]any{
-				"template_name": "app.yaml", "environment_id": stagingID,
+				"environment_id": stagingID,
 				"payload": map[string]any{
 					"db_host":     "${shared_db.host}",
 					"db_password": "${shared_db.password}",
@@ -282,7 +282,7 @@ db_password: {{ .db_password }}`,
 
 			By("carol creates payments staging values referencing same shared_db")
 			doRequest("POST", "/api/projects/payments-service/values", map[string]any{
-				"template_name": "app.yaml", "environment_id": stagingID,
+				"environment_id": stagingID,
 				"payload": map[string]any{
 					"db_host":    "${shared_db.host}",
 					"cache_host": "${shared_redis.host}",
@@ -290,13 +290,13 @@ db_password: {{ .db_password }}`,
 			}, carolID, "carol")
 
 			By("both projects store their references independently")
-			rec := doRequest("GET", "/api/projects/billing-service/templates/app.yaml/envs/staging/values", nil, aliceID, "alice")
+			rec := doRequest("GET", "/api/projects/billing-service/envs/staging/values", nil, aliceID, "alice")
 			billingPayload := decode[map[string]any](rec)["payload"].(map[string]any)
 			Expect(billingPayload["db_host"]).To(Equal("${shared_db.host}"))
 			Expect(billingPayload["db_password"]).To(Equal("${shared_db.password}"))
 			Expect(billingPayload).NotTo(HaveKey("cache_host"))
 
-			rec = doRequest("GET", "/api/projects/payments-service/templates/app.yaml/envs/staging/values", nil, carolID, "carol")
+			rec = doRequest("GET", "/api/projects/payments-service/envs/staging/values", nil, carolID, "carol")
 			paymentsPayload := decode[map[string]any](rec)["payload"].(map[string]any)
 			Expect(paymentsPayload["db_host"]).To(Equal("${shared_db.host}"))
 			Expect(paymentsPayload["cache_host"]).To(Equal("${shared_redis.host}"))

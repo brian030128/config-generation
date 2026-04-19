@@ -347,6 +347,65 @@ func (h *TemplateHandler) Variables(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, models.TemplateVariablesResponse{Variables: vars})
 }
 
+// ProjectVariables returns the union of variables across all templates in a project.
+func (h *TemplateHandler) ProjectVariables(w http.ResponseWriter, r *http.Request) {
+	projectID, err := resolveProjectID(r, h.DB)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+
+	// Fetch the latest body of each template in this project.
+	rows, err := h.DB.QueryContext(r.Context(), `
+		SELECT DISTINCT ON (template_name) body
+		FROM project_config_templates
+		WHERE project_id = $1
+		ORDER BY template_name, version_id DESC
+	`, projectID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+	defer rows.Close()
+
+	seen := map[string]*models.TemplateVariable{}
+	var order []string
+
+	for rows.Next() {
+		var body string
+		if err := rows.Scan(&body); err != nil {
+			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			return
+		}
+		vars, err := extractTemplateVariables(body)
+		if err != nil {
+			continue // skip unparseable templates
+		}
+		for _, v := range vars {
+			if _, exists := seen[v.Name]; !exists {
+				vCopy := v
+				seen[v.Name] = &vCopy
+				order = append(order, v.Name)
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+
+	result := make([]models.TemplateVariable, 0, len(order))
+	for _, name := range order {
+		result = append(result, *seen[name])
+	}
+
+	writeJSON(w, http.StatusOK, models.TemplateVariablesResponse{Variables: result})
+}
+
 // extractTemplateVariables parses a Go template body with Sprig functions and
 // walks the AST to find top-level field references ({{ .name }}) and their
 // default values ({{ .name | default "value" }}).

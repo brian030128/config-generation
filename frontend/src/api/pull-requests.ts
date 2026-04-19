@@ -39,7 +39,7 @@ export const pullRequestsApi = {
 
   stageChange: (projectName: string, req: {
     object_type: string
-    template_name: string
+    template_name?: string
     environment_name?: string
     proposed_payload: string
   }) =>

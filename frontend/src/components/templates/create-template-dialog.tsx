@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { toast } from "sonner"
-import { useCreateTemplate } from "@/hooks/use-templates"
+import { useStageChange } from "@/hooks/use-pull-requests"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -22,32 +22,30 @@ export function CreateTemplateDialog({
   const [open, setOpen] = useState(false)
   const [name, setName] = useState("")
   const [body, setBody] = useState("")
-  const [commitMsg, setCommitMsg] = useState("")
-  const createTemplate = useCreateTemplate(projectName)
+  const stageChange = useStageChange(projectName)
 
   function reset() {
     setName("")
     setBody("")
-    setCommitMsg("")
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim() || !body.trim()) return
-    createTemplate.mutate(
+    stageChange.mutate(
       {
+        object_type: "template",
         template_name: name.trim(),
-        body: body,
-        commit_message: commitMsg.trim() || undefined,
+        proposed_payload: body,
       },
       {
         onSuccess: () => {
-          toast.success(`Template "${name.trim()}" created`)
+          toast.success(`Template "${name.trim()}" staged in draft`)
           setOpen(false)
           reset()
         },
         onError: (err) => {
-          toast.error("Failed to create template", {
+          toast.error("Failed to stage template", {
             description: (err as Error).message,
           })
         },
@@ -94,8 +92,8 @@ export function CreateTemplateDialog({
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={createTemplate.isPending}>
-              {createTemplate.isPending ? "Creating..." : "Create"}
+            <Button type="submit" disabled={stageChange.isPending}>
+              {stageChange.isPending ? "Creating..." : "Create"}
             </Button>
           </div>
         </form>

@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useTemplates } from "@/hooks/use-templates"
+import { useActiveDraft } from "@/hooks/use-pull-requests"
 import { formatRelativeTime } from "@/lib/utils"
 import { TemplateEditor } from "./template-editor"
 import { CreateTemplateDialog } from "./create-template-dialog"
@@ -16,11 +17,24 @@ interface TemplateListProps {
 
 export function TemplateList({ projectName, workspaceMode, modifiedTemplates }: TemplateListProps) {
   const { data, isLoading } = useTemplates(projectName)
+  const { data: draft } = useActiveDraft(workspaceMode ? projectName : "")
   const [editingTemplate, setEditingTemplate] = useState<string | null>(null)
   const [expandedTemplate, setExpandedTemplate] = useState<string | null>(null)
   const navigate = useNavigate()
 
   const templates = data?.items ?? []
+
+  // Staged new templates (in draft but not in DB)
+  const stagedNewTemplates = workspaceMode
+    ? (draft?.changes ?? [])
+        .filter((c) => c.object_type === "template" && c.template_name)
+        .filter((c) => !templates.some((t) => t.template_name === c.template_name))
+        .map((c) => ({
+          template_name: c.template_name!,
+          body: c.proposed_payload,
+          staged: true,
+        }))
+    : []
 
   function toggleExpand(name: string) {
     setExpandedTemplate(expandedTemplate === name ? null : name)
@@ -37,7 +51,7 @@ export function TemplateList({ projectName, workspaceMode, modifiedTemplates }: 
         <p className="text-sm text-muted-foreground">Loading templates...</p>
       )}
 
-      {!isLoading && templates.length === 0 && (
+      {!isLoading && templates.length === 0 && stagedNewTemplates.length === 0 && (
         <p className="text-sm text-muted-foreground">
           No templates yet. Create one to get started.
         </p>
@@ -106,6 +120,42 @@ export function TemplateList({ projectName, workspaceMode, modifiedTemplates }: 
               )}
 
               {/* Editable editor in workspace mode */}
+              {isEditing && (
+                <div className="mt-2">
+                  <TemplateEditor
+                    projectName={projectName}
+                    templateName={t.template_name}
+                    onClose={() => setEditingTemplate(null)}
+                  />
+                </div>
+              )}
+            </div>
+          )
+        })}
+
+        {/* Staged new templates (not yet merged) */}
+        {stagedNewTemplates.map((t) => {
+          const isEditing = editingTemplate === t.template_name
+
+          return (
+            <div key={`staged-${t.template_name}`}>
+              <div className="flex items-center justify-between rounded-lg border border-dashed px-4 py-3">
+                <div className="flex items-center gap-4">
+                  <span className="font-mono text-sm">{t.template_name}</span>
+                  <Badge variant="secondary" className="text-xs">in draft</Badge>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    setEditingTemplate(isEditing ? null : t.template_name)
+                  }
+                >
+                  <Pencil className="mr-2 h-3 w-3" />
+                  {isEditing ? "Close" : "Edit"}
+                </Button>
+              </div>
+
               {isEditing && (
                 <div className="mt-2">
                   <TemplateEditor

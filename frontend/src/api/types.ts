@@ -23,8 +23,10 @@ export interface Project {
 
 export interface Environment {
   id: number
+  project_id: number
   name: string
   description: string | null
+  created_by: number
   created_at: string
 }
 
@@ -42,7 +44,6 @@ export interface ProjectConfigTemplate {
 export interface ProjectConfigValues {
   id: number
   project_id: number
-  template_name: string
   environment_id: number
   version_id: number
   payload: Record<string, unknown>
@@ -98,11 +99,6 @@ export interface CreateProjectRequest {
   approval_condition?: string
 }
 
-export interface CreateEnvironmentRequest {
-  name: string
-  description?: string
-}
-
 export interface CreateTemplateRequest {
   template_name: string
   body: string
@@ -115,7 +111,6 @@ export interface AppendTemplateVersionRequest {
 }
 
 export interface CreateProjectConfigValuesRequest {
-  template_name: string
   environment_id: number
   payload: Record<string, unknown>
   commit_message?: string
@@ -168,10 +163,10 @@ export interface PRApproval {
 export interface PRChange {
   id: number
   pr_id: number
-  object_type: "template" | "values" | "global_values"
+  object_type: "template" | "values" | "global_values" | "environment"
   project_id: number | null
   template_name: string | null
-  environment_id: number | null
+  environment_name: string | null
   global_values_name: string | null
   base_version_id: number
   proposed_payload: string

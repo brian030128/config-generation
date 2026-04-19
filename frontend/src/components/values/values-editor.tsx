@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
-import { useTemplateVariables } from "@/hooks/use-templates"
+import { useProjectVariables } from "@/hooks/use-templates"
 import type { ProjectConfigValues } from "@/api/types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,21 +12,19 @@ import { ExternalLink } from "lucide-react"
 
 interface ValuesEditorProps {
   projectName: string
-  templateName: string
   envName: string
   values: ProjectConfigValues | null
 }
 
 export function ValuesEditor({
   projectName,
-  templateName,
   envName,
   values,
 }: ValuesEditorProps) {
   const [payload, setPayload] = useState<Record<string, unknown>>({})
   const [refMode, setRefMode] = useState<Record<string, boolean>>({})
   const [refState, setRefState] = useState<Record<string, { group: string; key: string }>>({})
-  const { data: varsData, isLoading: varsLoading } = useTemplateVariables(projectName, templateName)
+  const { data: varsData, isLoading: varsLoading } = useProjectVariables(projectName)
   const navigate = useNavigate()
 
   const variables = varsData?.variables ?? []
@@ -56,13 +54,13 @@ export function ValuesEditor({
   }, [varsData, values?.id])
 
   if (varsLoading) {
-    return <p className="text-sm text-muted-foreground">Loading template variables...</p>
+    return <p className="text-sm text-muted-foreground">Loading variables...</p>
   }
 
   if (variables.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        This template has no variables to configure.
+        No templates found or no variables to configure.
       </p>
     )
   }

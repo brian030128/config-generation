@@ -53,6 +53,13 @@ export const templatesApi = {
       )
       .then((r) => r.data),
 
+  getProjectVariables: (projectName: string) =>
+    client
+      .get<TemplateVariablesResponse>(
+        `/projects/${projectName}/variables`,
+      )
+      .then((r) => r.data),
+
   getVersion: (
     projectName: string,
     templateName: string,

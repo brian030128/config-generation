@@ -17,10 +17,10 @@ CREATE INDEX idx_pull_requests_project_status ON pull_requests (project_id, stat
 CREATE TABLE pr_changes (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     pr_id BIGINT NOT NULL REFERENCES pull_requests(id),
-    object_type TEXT NOT NULL CHECK (object_type IN ('template', 'values', 'global_values')),
+    object_type TEXT NOT NULL CHECK (object_type IN ('template', 'values', 'global_values', 'environment')),
     project_id BIGINT REFERENCES projects(id),
     template_name TEXT,
-    environment_id BIGINT REFERENCES environments(id),
+    environment_name TEXT,
     global_values_name TEXT,
     base_version_id INTEGER NOT NULL,
     proposed_payload TEXT NOT NULL,

@@ -120,7 +120,7 @@ function KvDiffCard({ change }: { change: PRChange }) {
   const label =
     change.object_type === "global_values"
       ? `Global Values: ${change.global_values_name}`
-      : `Values: ${change.template_name}`
+      : `Values: ${change.environment_name ?? "unknown"}`
 
   return (
     <div className="rounded-lg border">
@@ -175,9 +175,30 @@ function KvDiffCard({ change }: { change: PRChange }) {
   )
 }
 
+function EnvCreateCard({ change }: { change: PRChange }) {
+  const envData = (() => {
+    try { return JSON.parse(change.proposed_payload) as { name: string; description?: string } }
+    catch { return { name: "unknown" } }
+  })()
+
+  return (
+    <div className="rounded-lg border">
+      <div className="flex items-center justify-between border-b bg-muted/50 px-4 py-2">
+        <span className="text-sm font-medium">New Environment: {envData.name}</span>
+      </div>
+      {envData.description && (
+        <div className="px-4 py-2 text-sm text-muted-foreground">{envData.description}</div>
+      )}
+    </div>
+  )
+}
+
 function ChangeCard({ change, projectName }: { change: PRChange; projectName: string }) {
   if (change.object_type === "template") {
     return <TemplateDiffCard change={change} projectName={projectName} />
+  }
+  if (change.object_type === "environment") {
+    return <EnvCreateCard change={change} />
   }
   return <KvDiffCard change={change} />
 }
@@ -189,6 +210,9 @@ export default function PRDetailPage() {
   const { user } = useAuth()
   const { data: pr, isLoading, error } = usePullRequest(prId)
   const { data: projects } = useProjects()
+  const projectName = pr?.project_id
+    ? projects?.items.find((p) => p.id === pr.project_id)?.name ?? ""
+    : ""
   const closePR = useClosePullRequest()
   const mergePR = useMergePullRequest()
   const approvePR = useApprovePullRequest()
@@ -280,9 +304,6 @@ export default function PRDetailPage() {
   }
 
   const activeApprovals = pr.approvals?.filter((a) => !a.withdrawn_at) ?? []
-  const projectName = pr.project_id
-    ? projects?.items.find((p) => p.id === pr.project_id)?.name ?? ""
-    : ""
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">

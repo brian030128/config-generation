@@ -2,7 +2,6 @@ import { useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 import { useProject } from "@/hooks/use-projects"
-import { useTemplates } from "@/hooks/use-templates"
 import { useActiveDraft, useSubmitDraft } from "@/hooks/use-pull-requests"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
@@ -24,7 +23,6 @@ export default function WorkspaceProjectPage() {
   const { name } = useParams<{ name: string }>()
   const navigate = useNavigate()
   const { data: project, isLoading: projectLoading } = useProject(name!)
-  const { data: templates } = useTemplates(name!)
   const { data: draft, isLoading: draftLoading } = useActiveDraft(name!)
   const submitDraft = useSubmitDraft()
 
@@ -32,7 +30,6 @@ export default function WorkspaceProjectPage() {
   const [submitTitle, setSubmitTitle] = useState("")
   const [submitDesc, setSubmitDesc] = useState("")
 
-  const templateCount = templates?.count ?? 0
   const changeCount = draft?.changes?.length ?? 0
 
   // Which templates/envs have changes in the draft
@@ -125,11 +122,15 @@ export default function WorkspaceProjectPage() {
                 <span className="font-mono text-xs">
                   {c.object_type === "template"
                     ? c.template_name
-                    : `${c.template_name} / env#${c.environment_id}`}
+                    : c.object_type === "environment"
+                      ? c.environment_name
+                      : c.environment_name}
                 </span>
-                <span className="text-muted-foreground text-xs">
-                  v{c.base_version_id} → draft
-                </span>
+                {c.object_type !== "environment" && (
+                  <span className="text-muted-foreground text-xs">
+                    v{c.base_version_id} → draft
+                  </span>
+                )}
               </div>
             ))}
           </div>
@@ -153,7 +154,6 @@ export default function WorkspaceProjectPage() {
         <TabsContent value="environments" className="mt-4">
           <EnvironmentList
             projectName={name!}
-            templateCount={templateCount}
             workspaceMode
           />
         </TabsContent>

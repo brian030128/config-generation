@@ -186,6 +186,7 @@ func (h *ProjectHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		`DELETE FROM roles WHERE project_id = $1`,
 		`DELETE FROM project_config_values WHERE project_id = $1`,
 		`DELETE FROM project_config_templates WHERE project_id = $1`,
+		`DELETE FROM environments WHERE project_id = $1`,
 		`DELETE FROM projects WHERE id = $1`,
 	}
 	for _, q := range cascadeQueries {

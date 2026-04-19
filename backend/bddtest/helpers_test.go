@@ -125,12 +125,29 @@ func createProject(userID int64, username, projectName string) map[string]any {
 	return decode[map[string]any](rec)
 }
 
-func createEnvironment(userID int64, username, envName string) map[string]any {
-	rec := doRequest("POST", "/api/environments", map[string]any{
-		"name": envName,
-	}, userID, username)
-	Expect(rec.Code).To(Equal(http.StatusCreated))
-	return decode[map[string]any](rec)
+func createEnvironment(userID int64, username, projectName, envName string) map[string]any {
+	// Environments are project-scoped and created via PR workflow.
+	// For test convenience, insert directly into DB.
+	var projectID int64
+	err := testDB.QueryRowContext(context.Background(),
+		`SELECT id FROM projects WHERE name = $1`, projectName).Scan(&projectID)
+	Expect(err).NotTo(HaveOccurred())
+
+	var env struct {
+		ID        int64
+		CreatedAt time.Time
+	}
+	err = testDB.QueryRowContext(context.Background(), `
+		INSERT INTO environments (project_id, name, created_by)
+		VALUES ($1, $2, $3) RETURNING id, created_at
+	`, projectID, envName, userID).Scan(&env.ID, &env.CreatedAt)
+	Expect(err).NotTo(HaveOccurred())
+
+	return map[string]any{
+		"id":         float64(env.ID),
+		"project_id": float64(projectID),
+		"name":       envName,
+	}
 }
 
 func createTemplate(userID int64, username, projectName, templateName, body string) map[string]any {

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react"
+import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { EditorView, keymap } from "@codemirror/view"
 import { EditorState, Compartment } from "@codemirror/state"
 import { basicSetup } from "codemirror"
@@ -6,7 +6,7 @@ import { javascript } from "@codemirror/lang-javascript"
 import { oneDark } from "@codemirror/theme-one-dark"
 import { toast } from "sonner"
 import { useTemplate } from "@/hooks/use-templates"
-import { useStageChange } from "@/hooks/use-pull-requests"
+import { useStageChange, useActiveDraft } from "@/hooks/use-pull-requests"
 import { templatesApi } from "@/api/templates"
 import { VersionHistory } from "./version-history"
 import { Button } from "@/components/ui/button"
@@ -30,8 +30,21 @@ export function TemplateEditor({
   const readOnlyCompartment = useRef(new Compartment())
 
   const { data: template } = useTemplate(projectName, templateName)
+  const { data: draft } = useActiveDraft(projectName)
   const stageChange = useStageChange(projectName)
 
+  // Find staged change for this template in the draft
+  const stagedChange = useMemo(
+    () =>
+      draft?.changes?.find(
+        (c) => c.object_type === "template" && c.template_name === templateName,
+      ),
+    [draft, templateName],
+  )
+
+  // Use staged body if available, otherwise DB body
+  const initialBody = stagedChange?.proposed_payload ?? template?.body ?? null
+  const isNewTemplate = !template
   const latestVersionId = template?.version_id ?? null
 
   const createEditorState = useCallback(
@@ -63,31 +76,34 @@ export function TemplateEditor({
     [],
   )
 
-  // Initialize editor
+  // Initialize editor when body is available
   useEffect(() => {
-    if (!editorRef.current || !template) return
+    if (!editorRef.current || initialBody === null) return
     if (viewRef.current) {
       viewRef.current.destroy()
     }
-    const state = createEditorState(template.body, false)
+    const state = createEditorState(initialBody, false)
     const view = new EditorView({ state, parent: editorRef.current })
     viewRef.current = view
-    setSelectedVersion(template.version_id)
+    if (!isNewTemplate && template) {
+      setSelectedVersion(template.version_id)
+    }
     return () => view.destroy()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [template?.id])
+  }, [template?.id, stagedChange?.id, initialBody === null])
 
   // Handle version selection
   async function handleSelectVersion(versionId: number) {
     setSelectedVersion(versionId)
     if (versionId === latestVersionId) {
       setIsReadOnly(false)
-      if (viewRef.current && template) {
+      if (viewRef.current) {
+        const body = stagedChange?.proposed_payload ?? template?.body ?? ""
         viewRef.current.dispatch({
           changes: {
             from: 0,
             to: viewRef.current.state.doc.length,
-            insert: template.body,
+            insert: body,
           },
           effects: readOnlyCompartment.current.reconfigure(
             EditorState.readOnly.of(false),
@@ -184,16 +200,19 @@ export function TemplateEditor({
           )}
         </div>
 
-        <Separator orientation="vertical" className="h-auto" />
-
-        <div className="w-48 shrink-0">
-          <VersionHistory
-            projectName={projectName}
-            templateName={templateName}
-            selectedVersion={selectedVersion}
-            onSelectVersion={handleSelectVersion}
-          />
-        </div>
+        {!isNewTemplate && (
+          <>
+            <Separator orientation="vertical" className="h-auto" />
+            <div className="w-48 shrink-0">
+              <VersionHistory
+                projectName={projectName}
+                templateName={templateName}
+                selectedVersion={selectedVersion}
+                onSelectVersion={handleSelectVersion}
+              />
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

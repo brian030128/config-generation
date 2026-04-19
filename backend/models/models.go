@@ -14,8 +14,10 @@ type User struct {
 
 type Environment struct {
 	ID          int64     `json:"id"`
+	ProjectID   int64     `json:"project_id"`
 	Name        string    `json:"name"`
 	Description *string   `json:"description"`
+	CreatedBy   int64     `json:"created_by"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 
@@ -43,7 +45,6 @@ type ProjectConfigTemplate struct {
 type ProjectConfigValues struct {
 	ID            int64           `json:"id"`
 	ProjectID     int64           `json:"project_id"`
-	TemplateName  string          `json:"template_name"`
 	EnvironmentID int64           `json:"environment_id"`
 	VersionID     int             `json:"version_id"`
 	Payload       json.RawMessage `json:"payload"`
@@ -124,7 +125,7 @@ type PRChange struct {
 	ObjectType       string          `json:"object_type"`
 	ProjectID        *int64          `json:"project_id"`
 	TemplateName     *string         `json:"template_name"`
-	EnvironmentID    *int64          `json:"environment_id"`
+	EnvironmentName  *string         `json:"environment_name"`
 	GlobalValuesName *string         `json:"global_values_name"`
 	BaseVersionID    int             `json:"base_version_id"`
 	ProposedPayload  string          `json:"proposed_payload"`

@@ -46,6 +46,9 @@ export function useMergePullRequest() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: pullRequestKeys.all })
       qc.invalidateQueries({ queryKey: ["global-values"] })
+      // Merge creates new templates, environments, and values — invalidate all project data.
+      qc.invalidateQueries({ queryKey: ["projects"] })
+      qc.invalidateQueries({ queryKey: ["workspace"] })
     },
   })
 }
@@ -78,7 +81,7 @@ export function useStageChange(projectName: string) {
   return useMutation({
     mutationFn: (req: {
       object_type: string
-      template_name: string
+      template_name?: string
       environment_name?: string
       proposed_payload: string
     }) => pullRequestsApi.stageChange(projectName, req),

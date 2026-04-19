@@ -30,6 +30,13 @@ export function useTemplateVariables(projectName: string, templateName: string) 
   })
 }
 
+export function useProjectVariables(projectName: string) {
+  return useQuery({
+    queryKey: [...projectKeys.detail(projectName), "variables"] as const,
+    queryFn: () => templatesApi.getProjectVariables(projectName),
+  })
+}
+
 export function useTemplate(projectName: string, templateName: string) {
   return useQuery({
     queryKey: templateKeys.detail(projectName, templateName),

@@ -25,7 +25,6 @@ type AppendTemplateVersionRequest struct {
 }
 
 type CreateProjectConfigValuesRequest struct {
-	TemplateName  string          `json:"template_name"`
 	EnvironmentID int64           `json:"environment_id"`
 	Payload       json.RawMessage `json:"payload"`
 	CommitMessage *string         `json:"commit_message"`

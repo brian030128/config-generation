@@ -1,6 +1,5 @@
 import { useParams } from "react-router-dom"
 import { useProject } from "@/hooks/use-projects"
-import { useTemplates } from "@/hooks/use-templates"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { TemplateList } from "@/components/templates/template-list"
 import { EnvironmentList } from "@/components/environments/environment-list"
@@ -8,8 +7,6 @@ import { EnvironmentList } from "@/components/environments/environment-list"
 export default function ProjectPage() {
   const { name } = useParams<{ name: string }>()
   const { data: project, isLoading, error } = useProject(name!)
-  const { data: templates } = useTemplates(name!)
-
   if (isLoading) {
     return <p className="text-muted-foreground">Loading project...</p>
   }
@@ -21,8 +18,6 @@ export default function ProjectPage() {
       </p>
     )
   }
-
-  const templateCount = templates?.count ?? 0
 
   return (
     <div className="space-y-6">
@@ -46,7 +41,6 @@ export default function ProjectPage() {
         <TabsContent value="environments" className="mt-4">
           <EnvironmentList
             projectName={name!}
-            templateCount={templateCount}
           />
         </TabsContent>
 
