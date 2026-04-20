@@ -45,7 +45,8 @@ func (h *GlobalValuesHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(req.Payload) == 0 {
-		req.Payload = []byte(`{}`)
+		writeError(w, http.StatusBadRequest, "payload is required", "validation")
+		return
 	}
 	if err := validateFlatJSON(req.Payload); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error(), "validation")

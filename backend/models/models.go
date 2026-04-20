@@ -131,3 +131,30 @@ type PRChange struct {
 	ProposedPayload  string          `json:"proposed_payload"`
 	CreatedAt        time.Time       `json:"created_at"`
 }
+
+type Deployment struct {
+	ID              int64      `json:"id"`
+	ProjectID       int64      `json:"project_id"`
+	EnvironmentID   int64      `json:"environment_id"`
+	Status          string     `json:"status"`
+	RolledBackFrom  *int64     `json:"rolled_back_from"`
+	CommitMessage   *string    `json:"commit_message"`
+	CreatedBy       int64      `json:"created_by"`
+	CreatedAt       time.Time  `json:"created_at"`
+}
+
+type DeploymentEntry struct {
+	ID                int64  `json:"id"`
+	DeploymentID      int64  `json:"deployment_id"`
+	TemplateName      string `json:"template_name"`
+	TemplateVersionID int    `json:"template_version_id"`
+	ValuesVersionID   int    `json:"values_version_id"`
+	RenderedOutput    string `json:"rendered_output"`
+}
+
+type DeploymentEntryGlobalRef struct {
+	ID                    int64  `json:"id"`
+	DeploymentEntryID     int64  `json:"deployment_entry_id"`
+	GlobalValuesName      string `json:"global_values_name"`
+	GlobalValuesVersionID int    `json:"global_values_version_id"`
+}

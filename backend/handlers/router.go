@@ -24,6 +24,7 @@ func NewRouter(db *sql.DB, jwtSecret []byte) chi.Router {
 	gv := &GlobalValuesHandler{DB: db}
 	role := &RoleHandler{DB: db}
 	pr := &PullRequestHandler{DB: db}
+	deploy := &DeploymentHandler{DB: db}
 
 	perm := middleware.RequirePermission
 	param := middleware.URLParam
@@ -77,16 +78,25 @@ func NewRouter(db *sql.DB, jwtSecret []byte) chi.Router {
 				r.With(perm(db, "create", "env_values", param("projectName"), nil, nil)).
 					Post("/values", vals.Create)
 
-				r.Route("/envs/{envName}/values", func(r chi.Router) {
-					r.With(perm(db, "read", "project_values", param("projectName"), param("envName"), nil)).
-						Get("/", vals.GetLatest)
-
-					r.Route("/versions", func(r chi.Router) {
-						r.With(perm(db, "write", "project_values", param("projectName"), param("envName"), nil)).
-							Post("/", vals.AppendVersion)
+				r.Route("/envs/{envName}", func(r chi.Router) {
+					r.Route("/values", func(r chi.Router) {
 						r.With(perm(db, "read", "project_values", param("projectName"), param("envName"), nil)).
-							Get("/{versionID}", vals.GetVersion)
+							Get("/", vals.GetLatest)
+
+						r.Route("/versions", func(r chi.Router) {
+							r.With(perm(db, "write", "project_values", param("projectName"), param("envName"), nil)).
+								Post("/", vals.AppendVersion)
+							r.With(perm(db, "read", "project_values", param("projectName"), param("envName"), nil)).
+								Get("/{versionID}", vals.GetVersion)
+						})
 					})
+
+					// --- Deployments ---
+					r.Route("/deploy", func(r chi.Router) {
+						r.Post("/preview", deploy.Preview)
+						r.Post("/", deploy.Execute)
+					})
+					r.Get("/deployments/latest", deploy.GetLatest)
 				})
 
 				// --- Environments (project-scoped) ---

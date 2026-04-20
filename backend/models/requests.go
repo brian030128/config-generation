@@ -99,3 +99,16 @@ type SubmitDraftRequest struct {
 	Title       string  `json:"title"`
 	Description *string `json:"description"`
 }
+
+type DeployPreviewRequest struct {
+	TemplateVersions     map[string]int `json:"template_versions"`
+	ValuesVersionID      int            `json:"values_version_id"`
+	GlobalValuesVersions map[string]int `json:"global_values_versions"`
+}
+
+type DeployRequest struct {
+	TemplateVersions     map[string]int `json:"template_versions"`
+	ValuesVersionID      int            `json:"values_version_id"`
+	GlobalValuesVersions map[string]int `json:"global_values_versions"`
+	CommitMessage        *string        `json:"commit_message"`
+}
