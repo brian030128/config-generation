@@ -13,6 +13,7 @@ import PRDetailPage from "@/pages/pr-detail-page"
 import WorkspacePage from "@/pages/workspace-page"
 import WorkspaceProjectPage from "@/pages/workspace-project-page"
 import WorkspaceEnvPage from "@/pages/workspace-env-page"
+import DeployPage from "@/pages/deploy-page"
 
 const router = createBrowserRouter([
   {
@@ -28,6 +29,7 @@ const router = createBrowserRouter([
       { path: "global-values/:name/create-pr", element: <CreatePRPage /> },
       { path: "pull-requests", element: <PullRequestsPage /> },
       { path: "pull-requests/:id", element: <PRDetailPage /> },
+      { path: "deploy", element: <DeployPage /> },
       { path: "workspace", element: <WorkspacePage /> },
       { path: "workspace/:name", element: <WorkspaceProjectPage /> },
       { path: "workspace/:name/env/:env", element: <WorkspaceEnvPage /> },

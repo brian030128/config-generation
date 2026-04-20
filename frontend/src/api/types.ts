@@ -190,3 +190,51 @@ export interface CreatePullRequestRequest {
   global_values_name?: string
   proposed_payload: string
 }
+
+// Deployment types
+export interface DeployPreviewRequest {
+  template_versions: Record<string, number>
+  values_version_id: number
+  global_values_versions: Record<string, number>
+}
+
+export interface DeployRequest extends DeployPreviewRequest {
+  commit_message?: string
+}
+
+export interface TemplateRenderResult {
+  template_name: string
+  rendered_output?: string
+  error?: string
+  error_kind?: string
+  previous_output?: string
+  template_body: string
+  previous_template_body?: string
+  template_version_id: number
+}
+
+export interface DeployPreviewResponse {
+  results: TemplateRenderResult[]
+  values_payload: Record<string, unknown>
+  previous_values?: Record<string, unknown>
+  values_version_id: number
+  global_values: Record<string, Record<string, unknown>>
+  previous_global_values?: Record<string, Record<string, unknown>>
+  global_values_versions: Record<string, number>
+  has_errors: boolean
+}
+
+export interface DeployResponse {
+  deployment_id: number
+  status: string
+  results: TemplateRenderResult[]
+}
+
+export interface LatestDeploymentResponse {
+  deployment_id: number
+  template_versions: Record<string, number>
+  values_version_id: number
+  global_values_versions: Record<string, number>
+  created_at: string
+  commit_message?: string
+}

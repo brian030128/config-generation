@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom"
-import { FolderOpen, Globe, GitPullRequest, Pencil, LogOut } from "lucide-react"
+import { FolderOpen, Globe, GitPullRequest, Pencil, Rocket, LogOut } from "lucide-react"
 import { useAuth } from "@/lib/auth"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -9,6 +9,7 @@ const navItems = [
   { to: "/projects", label: "Projects", icon: FolderOpen },
   { to: "/global-values", label: "Global Values", icon: Globe },
   { to: "/workspace", label: "Workspace", icon: Pencil },
+  { to: "/deploy", label: "Deploy", icon: Rocket },
   { to: "/pull-requests", label: "Pull Requests", icon: GitPullRequest },
 ]
 
