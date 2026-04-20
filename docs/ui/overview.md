@@ -6,8 +6,9 @@
 Sidebar (persistent)
 ├── Projects          → project-listpage
 ├── Global Values     → global-values-listpage
-├── Pull Requests     → pull-requests-page
 ├── Workspace         → workspace-page
+├── Deploy            → deploy-page
+├── Pull Requests     → pull-requests-page
 └── User Menu
     └── Role Management (admin only)
 
@@ -21,7 +22,8 @@ Top Bar
 project-listpage
   └── project-page (click a project) — read-only view of current live state
         └── project-env-page (click an environment) — read-only live values
-              └── deployment-review-page (click "Review Deployment")
+
+deploy-page — select project, environment, pin versions, review diffs, deploy & download zip
 
 workspace-page — lists the user's active draft/PR per project
   └── workspace-project-page (click a project workspace)
@@ -46,10 +48,10 @@ workspace-page → select project (or start new workspace) → edit templates / 
 pull-requests-page → pr-detail-page → inspect diffs → approve → author merges
 
 ### 3. Deploy to an environment
-project-page → click environment → project-env-page → "Review Deployment" → deployment-review-page → review diffs → Deploy
+Sidebar → Deploy → select project & environment → pin versions → review diffs → Deploy → download zip
 
 ### 4. Manage shared values
 global-values-listpage → global-values-detail-page → edit key-value pairs → create PR
 
 ### 5. Rollback a deployment
-project-env-page → deployment history → select prior deployment → "Rollback to this" → deployment-review-page (rollback mode)
+Deploy page → select project & environment → expand Version Pinning → set versions to a prior deployment's versions → Deploy

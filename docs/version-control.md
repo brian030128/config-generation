@@ -177,11 +177,12 @@ The template selector at the top shows a badge next to each template indicating 
 
 When the user clicks **Deploy**:
 
-1. The system constructs a new Deployment record using the **pinned candidate version set** captured at GUI load (or last refresh). No re-resolution against "latest" occurs — the deployment uses exactly the version IDs the user reviewed.
+1. The system constructs a new Deployment record using the **pinned candidate version set** from the review session. No re-resolution against "latest" occurs — the deployment uses exactly the version IDs the user reviewed.
 2. Each template is rendered using its pinned template version, pinned values version, and the pinned versions of all referenced Global Values entries. The rendered outputs match what was shown in the right pane.
-3. The Deployment record is written with status `pending`, capturing every pinned version ID and its rendered output.
-4. The deployment is executed (mechanism out of scope for this spec).
-5. On success, status is set to `succeeded` and this becomes the new "last deployment" for future diffs. On failure, status is set to `failed` and the prior successful deployment remains the diff baseline.
+3. If any template fails to render, the deploy is blocked and the user is shown the rendering error (e.g. missing values, unknown global values reference, template execution error). The Deploy button is disabled until all errors are resolved.
+4. The Deployment record is written with status `succeeded`, capturing every pinned version ID and its rendered output.
+5. The rendered configs are packaged into a zip file (`{project}-{environment}-deploy.zip`) and downloaded automatically. Each file in the zip is named by template_name and contains the rendered output.
+6. The pinned versions become the new "last deployment" baseline for this (project, environment) — the next time the user opens this combination, version selectors default to these versions.
 
 Because version IDs are pinned end-to-end, what the user reviewed is bit-for-bit what gets deployed, regardless of any concurrent edits by other authors.
 

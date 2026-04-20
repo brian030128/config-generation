@@ -1,140 +1,162 @@
-# Deployment Review Page
+# Deploy Page
 
-**Route:** `/projects/:projectName/env/:envName/deploy`
+**Route:** `/deploy`
+**Sidebar:** Top-level nav item (Rocket icon)
 
-The split-pane review interface where users inspect exactly what will change before deploying. All version IDs are pinned at page load and remain fixed throughout the review session.
+Standalone page for deploying rendered config files. Users select a project, environment, and pin specific versions of all inputs. The page shows a split-pane diff review and, on deploy, saves the deployment record and downloads rendered configs as a zip file.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  Deploy: billing-service → staging                                      │
-│  Template: [ app.yaml ▾ ]  [database.conf]  [nginx.conf●]              │
+│  🚀 Deploy                                                             │
+│                                                                         │
+│  Project: [ billing-service ▾ ]   Environment: [ staging ▾ ]            │
+│                                                   [Refresh Preview]     │
+│                                                                         │
+│  ▸ Version Pinning (3 templates, values v13, 2 global value groups)     │
+│                                                                         │
+│  Template: [ app.yaml ]  [database.conf]  [nginx.conf●]                │
 │                                                   ● = has changes       │
-│  ⓘ Newer versions available — [Refresh]                                 │
 ├────────────────────────────────┬────────────────────────────────────────┤
 │  INPUTS                        │  RENDERED OUTPUT                       │
 │                                │                                        │
-│  ▸ Template: app.yaml          │                                        │
-│    v7 → v8                     │   service: billing                     │
-│  ┌──────────────────────────┐  │   environment: staging                 │
-│  │  @@ -3,4 +3,5 @@        │  │   database:                            │
+│  ▸ Template: app.yaml v8       │                                        │
+│  ┌──────────────────────────┐  │   service: billing                     │
+│  │  @@ -3,4 +3,5 @@        │  │   environment: staging                 │
 │  │   service: {{ .svc }}    │  │  -  host: old-db.internal              │
 │  │  +environment: {{ .env }}│  │  +  host: test-db.internal             │
 │  │   database:              │  │     port: 5432                         │
-│  └──────────────────────────┘  │     user: app                          │
-│                                │  -  password: old_pass                  │
-│  ▸ Values: app.yaml/staging    │  +  password: s3cret                   │
-│    v12 → v13                   │   features:                            │
-│  ┌──────────────────────────┐  │     new_checkout: true                 │
-│  │  @@ -2,3 +2,4 @@        │  │  +  legacy_invoices: false             │
-│  │   "env": "staging",     │  │                                        │
-│  │  +"db_host": "${test_db… │  │                                        │
-│  │   "db_port": "${test_db… │  │                                        │
 │  └──────────────────────────┘  │                                        │
 │                                │                                        │
-│  ▸ Global: test_db_values      │                                        │
-│    v3 → v4                     │                                        │
+│  ▸ Values (v13)                │                                        │
 │  ┌──────────────────────────┐  │                                        │
-│  │  "host": "old-db…"      │  │                                        │
+│  │   "env": "staging",     │  │                                        │
+│  │  +"db_host": "${test_db… │  │                                        │
+│  └──────────────────────────┘  │                                        │
+│                                │                                        │
+│  ▸ Global: test_db_values (v4) │                                        │
+│  ┌──────────────────────────┐  │                                        │
 │  │  "host": "test-db…"     │  │                                        │
 │  └──────────────────────────┘  │                                        │
 │                                │                                        │
-│  ▾ Global: shared_secrets      │                                        │
-│    v9 (unchanged)              │                                        │
+│  ▾ Global: shared_secrets (v9) │                                        │
+│    [unchanged]                 │                                        │
 │                                │                                        │
 ├────────────────────────────────┴────────────────────────────────────────┤
 │  Commit message: [___________________________________]                  │
-│                                             [Cancel]  [Deploy]          │
+│                                                          [Deploy]       │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 1. Version Pinning
+## 1. Project & Environment Selection
 
-When the page loads, the system captures the **candidate version set** — the latest version IDs of:
-- All templates in the project
-- All values for the selected environment
-- All Global Values entries referenced by those values
+Two cascading dropdowns at the top of the page:
+- **Project** — lists all projects
+- **Environment** — lists environments for the selected project (disabled until project is chosen)
 
-These version IDs are **frozen** for the entire review session. Concurrent edits by other users do not affect this session.
-
-### "Refresh" Button
-If newer versions exist for any pinned input, a banner appears: *"Newer versions available."* Clicking **Refresh** re-captures a new candidate version set and reloads all panes.
-
-### Rollback Mode
-When opened from "Rollback to this" in the deployment history, the candidate version set uses the versions from the selected prior deployment instead of the current latest. The header shows: *"Rollback to deployment #N"* and the Deploy button reads **"Rollback"**.
+Once both are selected, the page loads version defaults and triggers a preview render.
 
 ---
 
-## 2. Template Selector
+## 2. Version Pinning
 
-Horizontal tabs or dropdown listing all templates in the project. Both panes update together when switching templates.
+A collapsible "Version Pinning" panel lets users control which exact versions are used:
 
-### Change Badges
-Each template tab shows a dot indicator if **any** of its inputs (template body, values, or referenced globals) differ between the pinned candidate and the last deployment. Lets the user quickly scan which templates will produce different output.
+- **Template versions** — per-template dropdown listing all available versions
+- **Values version** — the values version for the selected (project, environment)
+- **Global value group versions** — per referenced global values entry, dropdown of all versions
+
+### Default Versions
+
+- If a previous successful deployment exists for this (project, environment): version selectors default to the versions from that deployment.
+- If no prior deployment exists: version selectors default to the latest versions of all inputs.
+
+### Refresh
+
+Clicking **Refresh Preview** re-renders all templates with the currently pinned versions and updates both panes.
 
 ---
 
-## 3. Left Pane — Inputs
+## 3. Template Selector
+
+Horizontal tabs listing all templates in the project. Both panes update together when switching templates.
+
+### Indicators
+- **Red alert icon** — template has a rendering error
+- **Blue dot** — template output has changes compared to last deployment
+- No indicator — template output is unchanged
+
+---
+
+## 4. Left Pane — Inputs
 
 Shows every source input that contributes to rendering the selected template, in order:
 
-### 3.1 Template Section
-- **Header:** template name, version transition (e.g. `v7 → v8`), or version number + "unchanged" tag
-- **Body:** git-style diff of the template text between last-deployed version and pinned candidate version
+### 4.1 Template Section
+- **Header:** template name, pinned version
+- **Body:** unified diff of the template text between last-deployed version and pinned version
 
-### 3.2 Values Section
-- **Header:** values identifier (template/env), version transition
-- **Body:** diff of the JSON, pretty-printed with stable key ordering
+### 4.2 Values Section
+- **Header:** pinned version
+- **Body:** diff of the JSON payload, pretty-printed
 
-### 3.3 Global Values Sections
-One section per Global Values entry referenced by the pinned values. Entries are listed with:
-- **Header:** global values name, version transition
-- **Added/removed tags** if the entry is newly referenced or no longer referenced compared to the last deployment
-- **Body:** diff of the flat JSON
+### 4.3 Global Values Sections
+One collapsible section per Global Values entry referenced by the pinned values:
+- **Header:** global values name, pinned version
+- **Body:** diff of the flat JSON payload
 
 ### Collapse Behavior
 - Sections with changes are **expanded** by default
-- Unchanged sections are **collapsed** by default, showing only the header with an "unchanged" tag
+- Unchanged sections are **collapsed** by default, showing an "unchanged" badge
 - All sections are manually expandable/collapsible
 
 ---
 
-## 4. Right Pane — Rendered Output
+## 5. Right Pane — Rendered Output
 
 Shows the rendered config text as a diff between:
 - **Old:** the `rendered_output` from the last successful deployment for this `(project, environment, template)`
-- **New:** the output rendered using the pinned candidate version set
+- **New:** the output rendered using the pinned version set
 
-If no prior deployment exists, the entire output is shown as additions.
+If no prior deployment exists, the full rendered output is shown without diff markers.
 
-If rendering fails (missing values, bad template syntax, unknown references), the pane shows the error message and the **Deploy** button is disabled.
+### Error Display
+
+If rendering fails (missing values, bad template syntax, unknown global values references, unknown keys), the right pane shows:
+- A red error panel with the error message
+- The error kind badge (e.g. `template_exec`, `unknown_key`, `unknown_global_values`)
+- The **Deploy** button is disabled with a tooltip: "Fix rendering errors before deploying"
+
+Error examples:
+- *"template execution error in "app.yaml": template: app.yaml:3:12: executing "app.yaml" at <.db_host>: map has no entry for key "db_host""*
+- *"unknown key "bad_key" in global values "test_db_values""*
+- *"unknown global values entry "nonexistent_db""*
 
 ---
 
-## 5. Diff Rendering
+## 6. Diff Rendering
 
-Both panes use the same conventions:
-- **Unified or split view**, user-toggleable (persisted per user preference)
+Both panes use unified diff conventions:
 - Standard line-level coloring: additions (green), deletions (red)
-- Syntax highlighting based on format (Go template for inputs, detected format for output)
 - Summary line at the top of each diff: `+N −M lines`
+- "No changes" message when old and new are identical
 
 ---
 
-## 6. Deploy Action
+## 7. Deploy Action
 
 ### Preconditions
-- No rendering errors
+- No rendering errors across any template (Deploy button disabled if any errors exist)
 - User has deploy permission (when implemented)
 
 ### Flow
 1. User fills in optional **commit message**
 2. User clicks **Deploy**
-3. Confirmation dialog: *"Deploy billing-service to staging? This will use the exact versions shown in this review."*
-4. System creates a Deployment record with status `pending`, capturing all pinned version IDs and rendered outputs
-5. On success → status becomes `succeeded`, this becomes the new "last deployment"
-6. On failure → status becomes `failed`, user sees error, prior deployment remains the baseline
+3. Confirmation dialog: *"Deploy [project] to [environment]? This will use the exact versions shown in this review and download the rendered configs as a zip file."*
+4. System creates a Deployment record with status `succeeded`, capturing all pinned version IDs and rendered outputs
+5. Rendered configs are packaged into a zip file and downloaded automatically
+6. The pinned versions become the new "last deployment" baseline — next time this (project, environment) is opened, version selectors default to these versions
 
-### Cancel
-Returns to the project-env-page. No state is persisted from the review session.
+### Zip Download
+The zip file is named `{project}-{environment}-deploy.zip` and contains one file per template, named by template_name, containing the rendered output.

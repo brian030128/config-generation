@@ -10,11 +10,13 @@ import (
 
 var _ = Describe("Multi-Project Workflow", func() {
 	var (
-		aliceID   int64
-		bobID     int64
-		carolID   int64
-		stagingID float64
-		prodID    float64
+		aliceID        int64
+		bobID          int64
+		carolID        int64
+		stagingID      float64
+		prodID         float64
+		paymentsStgID  float64
+		paymentsProdID float64
 	)
 
 	BeforeEach(func() {
@@ -39,8 +41,10 @@ var _ = Describe("Multi-Project Workflow", func() {
 			stagingID = env["id"].(float64)
 			env = createEnvironment(aliceID, "alice", "billing-service", "prod")
 			prodID = env["id"].(float64)
-			createEnvironment(carolID, "carol", "payments-service", "staging")
-			createEnvironment(carolID, "carol", "payments-service", "prod")
+			pEnvStaging := createEnvironment(carolID, "carol", "payments-service", "staging")
+			paymentsStgID = pEnvStaging["id"].(float64)
+			pEnvProd := createEnvironment(carolID, "carol", "payments-service", "prod")
+			paymentsProdID = pEnvProd["id"].(float64)
 
 			// Alice grants bob write access to billing templates and staging values
 			billingDevRole := createCustomRole(aliceID, "alice", "billing-service", "billing-dev", []map[string]any{
@@ -95,14 +99,14 @@ task: {{ .task }}`)
 
 			By("carol bootstraps payments staging and prod values")
 			doRequest("POST", "/api/projects/payments-service/values", map[string]any{
-				"environment_id": stagingID,
+				"environment_id": paymentsStgID,
 				"payload": map[string]any{
 					"service_name": "payments",
 					"stripe_key":   "sk_test_xxx",
 				},
 			}, carolID, "carol")
 			doRequest("POST", "/api/projects/payments-service/values", map[string]any{
-				"environment_id": prodID,
+				"environment_id": paymentsProdID,
 				"payload": map[string]any{
 					"service_name": "payments",
 					"stripe_key":   "sk_live_xxx",
@@ -198,7 +202,7 @@ db_password: {{ .db_password }}`,
 
 			By("bob CAN write payments prod values (has wildcard env)")
 			carolBootstraps := doRequest("POST", "/api/projects/payments-service/values", map[string]any{
-				"environment_id": prodID,
+				"environment_id": paymentsProdID,
 				"payload": map[string]any{"env": "prod"},
 			}, carolID, "carol")
 			Expect(carolBootstraps.Code).To(Equal(http.StatusCreated))
@@ -282,7 +286,7 @@ db_password: {{ .db_password }}`,
 
 			By("carol creates payments staging values referencing same shared_db")
 			doRequest("POST", "/api/projects/payments-service/values", map[string]any{
-				"environment_id": stagingID,
+				"environment_id": paymentsStgID,
 				"payload": map[string]any{
 					"db_host":    "${shared_db.host}",
 					"cache_host": "${shared_redis.host}",
