@@ -1,0 +1,141 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows:
+      - Publish Images
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub environment to mark as deployed.
+        required: true
+        default: production
+        type: choice
+        options:
+          - staging
+          - production
+      image_sha:
+        description: Commit SHA whose sha-* images should be deployed.
+        required: true
+
+permissions:
+  contents: read
+  packages: read
+  deployments: write
+
+jobs:
+  deploy-staging:
+    name: Mark Staging Deployment
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      DEPLOY_ENVIRONMENT: staging
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image digests
+        id: images
+        run: |
+          backend_ref="ghcr.io/${{ github.repository_owner }}/config-generation-backend:sha-${DEPLOY_SHA}"
+          frontend_ref="ghcr.io/${{ github.repository_owner }}/config-generation-frontend:sha-${DEPLOY_SHA}"
+          backend_digest="$(docker buildx imagetools inspect "$backend_ref" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          frontend_digest="$(docker buildx imagetools inspect "$frontend_ref" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          echo "backend=${backend_ref%@*}@${backend_digest}" >> "$GITHUB_OUTPUT"
+          echo "frontend=${frontend_ref%@*}@${frontend_digest}" >> "$GITHUB_OUTPUT"
+
+      - name: Create deployment record
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const deployment = await github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: process.env.DEPLOY_SHA,
+              environment: process.env.DEPLOY_ENVIRONMENT,
+              auto_merge: false,
+              required_contexts: [],
+              description: "Staging deployment marker for published GHCR images",
+              payload: {
+                backend_image: "${{ steps.images.outputs.backend }}",
+                frontend_image: "${{ steps.images.outputs.frontend }}"
+              }
+            });
+
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: deployment.data.id,
+              state: "success",
+              environment: process.env.DEPLOY_ENVIRONMENT,
+              description: "Images published and ready for staging runtime rollout"
+            });
+
+  deploy-manual:
+    name: Mark Manual Deployment
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+      DEPLOY_SHA: ${{ inputs.image_sha }}
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image digests
+        id: images
+        run: |
+          backend_ref="ghcr.io/${{ github.repository_owner }}/config-generation-backend:sha-${DEPLOY_SHA}"
+          frontend_ref="ghcr.io/${{ github.repository_owner }}/config-generation-frontend:sha-${DEPLOY_SHA}"
+          backend_digest="$(docker buildx imagetools inspect "$backend_ref" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          frontend_digest="$(docker buildx imagetools inspect "$frontend_ref" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          echo "backend=${backend_ref%@*}@${backend_digest}" >> "$GITHUB_OUTPUT"
+          echo "frontend=${frontend_ref%@*}@${frontend_digest}" >> "$GITHUB_OUTPUT"
+
+      - name: Create deployment record
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const deployment = await github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: process.env.DEPLOY_SHA,
+              environment: process.env.DEPLOY_ENVIRONMENT,
+              auto_merge: false,
+              required_contexts: [],
+              description: "Manual deployment marker for published GHCR images",
+              payload: {
+                backend_image: "${{ steps.images.outputs.backend }}",
+                frontend_image: "${{ steps.images.outputs.frontend }}"
+              }
+            });
+
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: deployment.data.id,
+              state: "success",
+              environment: process.env.DEPLOY_ENVIRONMENT,
+              description: "Images published and approved for runtime rollout"
+            });
