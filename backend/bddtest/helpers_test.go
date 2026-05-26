@@ -146,13 +146,81 @@ func createEnvironment(userID int64, username, projectName, envName string) map[
 	}
 }
 
+// createTemplate seeds a published template (v1) directly in the DB. Authoring
+// now goes through the workspace; this helper exists to set up live state for
+// tests that exercise reads or downstream behaviour.
 func createTemplate(userID int64, username, projectName, templateName, body string) map[string]any {
-	rec := doRequest("POST", "/api/projects/"+projectName+"/templates", map[string]any{
+	var projectID int64
+	err := testDB.QueryRowContext(context.Background(),
+		`SELECT id FROM projects WHERE name = $1`, projectName).Scan(&projectID)
+	Expect(err).NotTo(HaveOccurred())
+
+	var id int64
+	err = testDB.QueryRowContext(context.Background(), `
+		INSERT INTO project_config_templates (project_id, template_name, version_id, body, created_by)
+		VALUES ($1, $2, 1, $3, $4) RETURNING id
+	`, projectID, templateName, body, userID).Scan(&id)
+	Expect(err).NotTo(HaveOccurred())
+
+	return map[string]any{
+		"id":            float64(id),
+		"project_id":    float64(projectID),
 		"template_name": templateName,
+		"version_id":    float64(1),
 		"body":          body,
-	}, userID, username)
-	Expect(rec.Code).To(Equal(http.StatusCreated))
-	return decode[map[string]any](rec)
+	}
+}
+
+// seedValues seeds a published value set version directly in the DB (computing
+// the next version), returning the created version_id.
+func seedValues(userID int64, projectName, envName string, payload map[string]any) int {
+	var projectID, envID int64
+	err := testDB.QueryRowContext(context.Background(),
+		`SELECT id FROM projects WHERE name = $1`, projectName).Scan(&projectID)
+	Expect(err).NotTo(HaveOccurred())
+	err = testDB.QueryRowContext(context.Background(),
+		`SELECT id FROM environments WHERE project_id = $1 AND name = $2`, projectID, envName).Scan(&envID)
+	Expect(err).NotTo(HaveOccurred())
+
+	raw, err := json.Marshal(payload)
+	Expect(err).NotTo(HaveOccurred())
+
+	var version int
+	err = testDB.QueryRowContext(context.Background(), `
+		INSERT INTO project_config_values (project_id, environment_id, version_id, payload, created_by)
+		VALUES ($1, $2,
+			COALESCE((SELECT version_id FROM project_config_values
+			          WHERE project_id = $1 AND environment_id = $2
+			          ORDER BY version_id DESC LIMIT 1), 0) + 1,
+			$3, $4)
+		RETURNING version_id
+	`, projectID, envID, raw, userID).Scan(&version)
+	Expect(err).NotTo(HaveOccurred())
+	return version
+}
+
+// submitApproveMerge takes the caller's active workspace through submit →
+// approve → merge so its staged changes become live state. The author is also
+// the approver (works when the author satisfies the approval condition).
+func submitApproveMerge(userID int64, username, projectName string) {
+	GinkgoHelper()
+	submitApproveMergeBy(userID, username, userID, username, projectName)
+}
+
+// submitApproveMergeBy is like submitApproveMerge but lets a different user
+// (e.g. a project admin) supply the approval while the author merges.
+func submitApproveMergeBy(authorID int64, authorName string, approverID int64, approverName, projectName string) {
+	GinkgoHelper()
+	rec := doRequest("GET", "/api/workspace/"+projectName, nil, authorID, authorName)
+	Expect(rec.Code).To(Equal(http.StatusOK))
+	prID := decode[map[string]any](rec)["id"].(float64)
+
+	rec = doRequest("POST", fmt.Sprintf("/api/pull-requests/%.0f/submit", prID), map[string]any{"title": "test change"}, authorID, authorName)
+	Expect(rec.Code).To(Equal(http.StatusOK))
+	rec = doRequest("POST", fmt.Sprintf("/api/pull-requests/%.0f/approve", prID), nil, approverID, approverName)
+	Expect(rec.Code).To(Equal(http.StatusOK))
+	rec = doRequest("POST", fmt.Sprintf("/api/pull-requests/%.0f/merge", prID), nil, authorID, authorName)
+	Expect(rec.Code).To(Equal(http.StatusOK))
 }
 
 func createGlobalValues(userID int64, username, name string, payload map[string]any) map[string]any {
@@ -186,10 +254,25 @@ func seedTemplateWritePermission(userID int64, projectName string) {
 	Expect(err).NotTo(HaveOccurred())
 }
 
+// appendTemplateVersion seeds the next published version of a template directly
+// in the DB, returning the new version_id.
 func appendTemplateVersion(userID int64, username, projectName, templateName, body string) map[string]any {
-	rec := doRequest("POST", "/api/projects/"+projectName+"/templates/"+templateName+"/versions", map[string]any{
-		"body": body,
-	}, userID, username)
-	Expect(rec.Code).To(Equal(http.StatusCreated))
-	return decode[map[string]any](rec)
+	var projectID int64
+	err := testDB.QueryRowContext(context.Background(),
+		`SELECT id FROM projects WHERE name = $1`, projectName).Scan(&projectID)
+	Expect(err).NotTo(HaveOccurred())
+
+	var version int
+	err = testDB.QueryRowContext(context.Background(), `
+		INSERT INTO project_config_templates (project_id, template_name, version_id, body, created_by)
+		VALUES ($1, $2,
+			COALESCE((SELECT version_id FROM project_config_templates
+			          WHERE project_id = $1 AND template_name = $2
+			          ORDER BY version_id DESC LIMIT 1), 0) + 1,
+			$3, $4)
+		RETURNING version_id
+	`, projectID, templateName, body, userID).Scan(&version)
+	Expect(err).NotTo(HaveOccurred())
+
+	return map[string]any{"version_id": float64(version), "body": body}
 }

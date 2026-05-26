@@ -6,7 +6,7 @@ import { javascript } from "@codemirror/lang-javascript"
 import { oneDark } from "@codemirror/theme-one-dark"
 import { toast } from "sonner"
 import { useTemplate } from "@/hooks/use-templates"
-import { useStageChange, useActiveDraft } from "@/hooks/use-pull-requests"
+import { useStageTemplate, useActiveDraft } from "@/hooks/use-pull-requests"
 import { templatesApi } from "@/api/templates"
 import { VersionHistory } from "./version-history"
 import { Button } from "@/components/ui/button"
@@ -31,7 +31,7 @@ export function TemplateEditor({
 
   const { data: template } = useTemplate(projectName, templateName)
   const { data: draft } = useActiveDraft(projectName)
-  const stageChange = useStageChange(projectName)
+  const stageTemplate = useStageTemplate(projectName)
 
   // Find staged change for this template in the draft
   const stagedChange = useMemo(
@@ -139,11 +139,11 @@ export function TemplateEditor({
   function handleSave() {
     if (!viewRef.current || isReadOnly) return
     const body = viewRef.current.state.doc.toString()
-    stageChange.mutate(
+    stageTemplate.mutate(
       {
-        object_type: "template",
-        template_name: templateName,
-        proposed_payload: body,
+        templateName,
+        body,
+        isNew: isNewTemplate,
       },
       {
         onSuccess: () => {
@@ -191,10 +191,10 @@ export function TemplateEditor({
               <Button
                 id="tmpl-save-btn"
                 onClick={handleSave}
-                disabled={stageChange.isPending}
+                disabled={stageTemplate.isPending}
                 size="sm"
               >
-                {stageChange.isPending ? "Saving..." : "Save to Draft"}
+                {stageTemplate.isPending ? "Saving..." : "Save to Draft"}
               </Button>
             </div>
           )}

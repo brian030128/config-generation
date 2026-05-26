@@ -55,7 +55,7 @@ var _ = Describe("Projects", func() {
 			Expect(role["is_auto_created"]).To(BeTrue())
 
 			perms := role["permissions"].([]any)
-			Expect(perms).To(HaveLen(5))
+			Expect(perms).To(HaveLen(6))
 
 			permSet := make(map[string]bool)
 			for _, p := range perms {
@@ -64,6 +64,7 @@ var _ = Describe("Projects", func() {
 				permSet[key] = true
 			}
 			Expect(permSet).To(HaveKey("write:project_templates"))
+			Expect(permSet).To(HaveKey("delete:project_templates"))
 			Expect(permSet).To(HaveKey("create:env_values"))
 			Expect(permSet).To(HaveKey("delete:project_values"))
 			Expect(permSet).To(HaveKey("delete:project"))

@@ -2,6 +2,7 @@ import { client } from "./client"
 import type {
   ListResponse,
   PullRequest,
+  PRChange,
   CreatePullRequestRequest,
 } from "./types"
 
@@ -34,14 +35,73 @@ export const pullRequestsApi = {
   submitDraft: (id: number, req: { title: string; description?: string }) =>
     client.post<PullRequest>(`/pull-requests/${id}/submit`, req).then((r) => r.data),
 
-  getActiveDraft: (projectName: string) =>
-    client.get<PullRequest>(`/workspace/${projectName}/draft`).then((r) => r.data),
+  // ── Workspace: the project write surface (one method per object/operation) ──
 
-  stageChange: (projectName: string, req: {
-    object_type: string
-    template_name?: string
-    environment_name?: string
-    proposed_payload: string
-  }) =>
-    client.post<PullRequest>(`/workspace/${projectName}/stage`, req).then((r) => r.data),
+  getActiveDraft: (projectName: string) =>
+    client.get<PullRequest>(`/workspace/${projectName}`).then((r) => r.data),
+
+  discardWorkspace: (projectName: string) =>
+    client.delete(`/workspace/${projectName}`).then((r) => r.data),
+
+  listChanges: (projectName: string) =>
+    client
+      .get<ListResponse<PRChange>>(`/workspace/${projectName}/changes`)
+      .then((r) => r.data),
+
+  unstageChange: (projectName: string, changeID: number) =>
+    client
+      .delete<PullRequest>(`/workspace/${projectName}/changes/${changeID}`)
+      .then((r) => r.data),
+
+  // Templates
+  createTemplate: (
+    projectName: string,
+    req: { template_name: string; body: string; commit_message?: string },
+  ) =>
+    client
+      .post<PullRequest>(`/workspace/${projectName}/templates`, req)
+      .then((r) => r.data),
+
+  updateTemplate: (
+    projectName: string,
+    templateName: string,
+    req: { body: string; commit_message?: string },
+  ) =>
+    client
+      .put<PullRequest>(`/workspace/${projectName}/templates/${templateName}`, req)
+      .then((r) => r.data),
+
+  deleteTemplate: (projectName: string, templateName: string) =>
+    client
+      .delete<PullRequest>(`/workspace/${projectName}/templates/${templateName}`)
+      .then((r) => r.data),
+
+  // Environments
+  createEnvironment: (
+    projectName: string,
+    req: { name: string; description?: string },
+  ) =>
+    client
+      .post<PullRequest>(`/workspace/${projectName}/environments`, req)
+      .then((r) => r.data),
+
+  deleteEnvironment: (projectName: string, envName: string) =>
+    client
+      .delete<PullRequest>(`/workspace/${projectName}/environments/${envName}`)
+      .then((r) => r.data),
+
+  // Values
+  putValues: (
+    projectName: string,
+    envName: string,
+    req: { payload: Record<string, unknown>; commit_message?: string },
+  ) =>
+    client
+      .put<PullRequest>(`/workspace/${projectName}/envs/${envName}/values`, req)
+      .then((r) => r.data),
+
+  deleteValues: (projectName: string, envName: string) =>
+    client
+      .delete<PullRequest>(`/workspace/${projectName}/envs/${envName}/values`)
+      .then((r) => r.data),
 }

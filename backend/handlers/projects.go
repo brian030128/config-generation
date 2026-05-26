@@ -69,6 +69,7 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 		action, resource, keyProject, keyEnv string
 	}{
 		{"write", "project_templates", project.Name, ""},
+		{"delete", "project_templates", project.Name, ""},
 		{"create", "env_values", project.Name, ""},
 		{"delete", "project_values", project.Name, "*"},
 		{"delete", "project", project.Name, ""},

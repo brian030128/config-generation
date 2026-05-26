@@ -14,10 +14,13 @@ There are two distinct PR types:
 
 ### 2.1 Project PRs
 
-A Project PR may contain changes across **multiple versioned objects** within a single project:
+A Project PR is the merge-time view of a user's **workspace** for a single project (§4.1). It
+may contain any mix of the following changes within that project, each tagged with an
+**operation** (`create`, `update`, or `delete`):
 
-- One or more **Project Config Templates**.
-- One or more **Project Config Values** (across any environments within the project).
+- **Project Config Templates** — create, edit, or delete a template.
+- **Project Config Values** — create, edit, or delete an environment's value set.
+- **Environments** — create or delete an environment (a non-versioned, structural change).
 
 All changes within a PR are treated as an atomic unit — they are merged together or not at all. This allows authors to coordinate related changes (e.g. adding a new template key and updating the values that reference it) in a single reviewable unit.
 
@@ -32,8 +35,8 @@ A Global Values PR **cannot** include project templates or project config values
 ### 2.3 Constraints
 
 - A PR is scoped to either a **single project** (Project PR) or a **single Global Values entry** (Global Values PR).
-- Each changed object in the PR contains a full-copy snapshot of its new content (consistent with the versioning strategy in the Version Control spec). The diff shown to reviewers is computed between the object's current latest version and the proposed snapshot.
-- A PR cannot include changes to non-versioned objects (Projects, Environments).
+- Each changed *versioned* object (template, values) carries a full-copy snapshot of its new content (consistent with the versioning strategy in the Version Control spec). The diff shown to reviewers is computed between the object's current latest version and the proposed snapshot. A **delete** change carries no payload — it records the intent to remove the object at merge.
+- **Environments** are non-versioned; a PR may include their **create**/**delete** as structural changes applied at merge (env create/delete is what stands up or tears down the value sets that hang off the environment). The **Project** itself is still never modified through a PR.
 
 ---
 
@@ -69,13 +72,24 @@ draft ──> open ──> approved ──> merged
 
 ## 4. Creating and Editing PRs
 
-### 4.1 Project PRs — Draft-First Editing
+### 4.1 Project PRs — the Workspace is the only write path
 
-All modifications to a project's versioned objects (templates, environment values) are saved to a **draft PR** rather than applied directly. The draft accumulates changes over time until the author is ready to submit it for review.
+There are **no direct-apply endpoints** for a project's objects. Every modification —
+creating/deleting an environment, creating/editing/deleting a template, creating/editing/deleting
+an environment's values — is **staged** into the author's **workspace** and only becomes part of
+the live project state when the PR is merged. The workspace **is** the user's active draft/open/
+approved Project PR.
 
-- When a user edits a template or environment values within a project, the change is staged in their **active draft PR**. If no draft exists, one is auto-created.
+- Each staged change is one of the typed workspace operations (see the API spec's *Workspace —
+  the project write surface*): a template `create`/`edit`/`delete`, an environment
+  `create`/`delete`, or a values `create-or-update`/`delete`. Each change records its **operation**
+  alongside the proposed snapshot (deletes carry no snapshot).
+- The first staged change **auto-creates** the draft PR if none exists.
 - A user may have at most **one active** (draft/open/approved) **PR per project** at a time. All edits within the project go to that single PR.
-- The user can continue making edits across multiple templates and environments; each change is added to (or updates an existing change in) the same PR.
+- The user can continue making edits across multiple templates, environments, and value sets; each change is added to (or updates/replaces an existing change for the same object in) the same PR. A single staged change can be **unstaged**, reverting that object to the published base within the workspace.
+- **Isolation:** while editing, the workspace shows the published base **overlaid with the
+  author's own staged changes** only. Other users' workspaces are invisible, and the published
+  state every user reads is unaffected until a merge.
 - When the user is satisfied, they submit the draft for review (transition from `draft` to `open`), at which point they provide a title and description.
 - After submitting, the user may **continue editing** the PR in the same way — further changes are added to the open/approved PR.
 - If the PR is already `approved` when the user pushes new changes, **all approvals are reset** and the PR returns to `open` for re-review (see §3.1).
@@ -99,7 +113,7 @@ A PR contains:
 - `title` — short summary of the change (set when submitting draft for review).
 - `description` — optional free-text body.
 - `status` — current lifecycle status.
-- `changes` — list of proposed object snapshots (see section 2).
+- `changes` — list of staged changes. Each carries an **object type** (template / values / environment), an **operation** (`create` / `update` / `delete`), the target identity, a `base_version_id` (for conflict detection on versioned objects), and a proposed snapshot for create/update (none for delete). See section 2.
 - `created_at`, `updated_at` — timestamps.
 
 ---
@@ -169,12 +183,19 @@ Only the **PR author** may merge. The merge button is available when:
 
 ### 6.2 Merge Action
 
-When the author clicks **Merge**:
+When the author clicks **Merge**, the staged changes are applied to live state according to
+their operation:
 
-1. For each changed object in the PR, a new version row is appended (per the full-copy versioning strategy). The new version's `created_by` is the PR author, and the `commit_message` references the PR (e.g. `"Merged from PR #42"`).
-2. All version rows are written atomically — either all succeed or none do.
-3. The PR status moves to `merged` with a timestamp.
-4. The new versions become the **latest** versions of their respective objects, available for the next deployment review.
+1. **Create / update** of a versioned object (template, values): a new version row is appended (per the full-copy versioning strategy). The new version's `created_by` is the PR author, and the `commit_message` references the PR (e.g. `"Merged from PR #42"`).
+2. **Delete** of a template or value set: the logical object and its entire version history are removed.
+3. **Environment create / delete**: the environment row is created, or deleted along with its value sets (a structural change — no version row).
+4. All of the above are applied **atomically** within a single transaction — either every change succeeds or none do.
+5. The PR status moves to `merged` with a timestamp.
+6. The resulting state becomes the **latest** for each affected object, available for the next deployment review.
+
+Because permission was already enforced when each change was **staged** (§8), merge re-checks
+only PR authorship, `approved` status, and conflict-freedom — it does not re-check write
+permission per object.
 
 ### 6.3 Post-Merge
 
@@ -208,12 +229,21 @@ PR operations interact with the existing permission model as follows:
 
 ### 8.1 Project PRs
 
-| Action | Required Permission |
+Permission is enforced when a change is **staged** into the workspace (per object/operation),
+not at merge time. The merge action itself requires only authorship + `approved` status.
+
+| Action (staged in the workspace) | Required Permission |
 |---|---|
-| Create a PR with template changes | `write:project_templates(project)` |
-| Create a PR with value changes | `write:project_values(project, env)` for each affected env |
+| Stage a template create or edit | `write:project_templates(project)` |
+| Stage a template delete | `delete:project_templates(project)` *(new atom)* |
+| Stage an environment create | `create:env_values(project)` |
+| Stage an environment delete | `delete:project_values(project, *)` |
+| Stage a value set create (first set for an env) | `create:env_values(project)` |
+| Stage a value set edit | `write:project_values(project, env)` |
+| Stage a value set delete | `delete:project_values(project, env)` |
+| Unstage a change / discard the workspace | the same permission as the staged op (author only for discard) |
 | Approve a PR | `read` permission on all objects in the PR, plus membership in a role referenced by the project's approval condition |
-| Merge a PR | Must be the PR author; PR must be `approved` |
+| Merge a PR | Must be the PR author; PR must be `approved`; not conflicted |
 | Close a PR | PR author or `grant(project)` holder |
 | Modify the approval condition | `grant(project)` |
 

@@ -7,7 +7,9 @@ import { formatRelativeTime } from "@/lib/utils"
 import { AlertTriangle } from "lucide-react"
 import type { PullRequest } from "@/api/types"
 
-const OPEN_STATUSES = ["draft", "open", "approved"]
+// Drafts are private to the author's workspace (see the Workspace page) and are
+// not shown in the review list — only submitted PRs appear here.
+const OPEN_STATUSES = ["open", "approved"]
 const CLOSED_STATUSES = ["merged", "closed"]
 
 function statusVariant(status: PullRequest["status"]) {

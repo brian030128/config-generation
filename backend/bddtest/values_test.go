@@ -8,90 +8,67 @@ import (
 )
 
 var _ = Describe("Project Config Values", func() {
-	var (
-		aliceID   int64
-		stagingID float64
-	)
+	var aliceID int64
 
 	BeforeEach(func() {
 		truncateAll()
 		aliceID = seedUser("alice", "Alice Smith")
 		seedSystemRole(aliceID)
 		createProject(aliceID, "alice", "billing-service")
-		env := createEnvironment(aliceID, "alice", "billing-service", "staging")
-		stagingID = env["id"].(float64)
+		createEnvironment(aliceID, "alice", "billing-service", "staging")
 		createTemplate(aliceID, "alice", "billing-service", "app.yaml", "{{ .service_name }}")
 	})
 
-	Context("creating a value set v1", func() {
-		It("returns 201 with version_id=1", func() {
-			rec := doRequest("POST", "/api/projects/billing-service/values", map[string]any{
-				"environment_id": stagingID,
-				"payload": map[string]any{
-					"service_name": "billing",
-					"env":          "staging",
-				},
+	Context("creating and editing values through the workspace", func() {
+		It("publishes a value set v1 on merge", func() {
+			rec := doRequest("PUT", "/api/workspace/billing-service/envs/staging/values", map[string]any{
+				"payload":        map[string]any{"service_name": "billing", "env": "staging"},
 				"commit_message": "Initial values",
 			}, aliceID, "alice")
+			Expect(rec.Code).To(Equal(http.StatusOK))
 
-			Expect(rec.Code).To(Equal(http.StatusCreated))
-			body := decode[map[string]any](rec)
-			Expect(body["version_id"]).To(BeEquivalentTo(1))
+			submitApproveMerge(aliceID, "alice", "billing-service")
+
+			rec = doRequest("GET", "/api/projects/billing-service/envs/staging/values", nil, aliceID, "alice")
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(decode[map[string]any](rec)["version_id"]).To(BeEquivalentTo(1))
 		})
 
-		It("rejects duplicate environment with 409", func() {
-			doRequest("POST", "/api/projects/billing-service/values", map[string]any{
-				"environment_id": stagingID,
-				"payload":        map[string]any{"key": "val"},
-			}, aliceID, "alice")
+		It("publishes v2 when editing an existing value set", func() {
+			seedValues(aliceID, "billing-service", "staging", map[string]any{"service_name": "billing-v1"})
 
-			rec := doRequest("POST", "/api/projects/billing-service/values", map[string]any{
-				"environment_id": stagingID,
-				"payload":        map[string]any{"key": "val2"},
+			rec := doRequest("PUT", "/api/workspace/billing-service/envs/staging/values", map[string]any{
+				"payload": map[string]any{"service_name": "billing-v2"},
 			}, aliceID, "alice")
-			Expect(rec.Code).To(Equal(http.StatusConflict))
+			Expect(rec.Code).To(Equal(http.StatusOK))
+
+			submitApproveMerge(aliceID, "alice", "billing-service")
+
+			rec = doRequest("GET", "/api/projects/billing-service/envs/staging/values", nil, aliceID, "alice")
+			body := decode[map[string]any](rec)
+			Expect(body["version_id"]).To(BeEquivalentTo(2))
+			Expect(body["payload"].(map[string]any)["service_name"]).To(Equal("billing-v2"))
 		})
 	})
 
-	Context("appending value versions", func() {
+	Context("full-copy versioning (read model)", func() {
 		BeforeEach(func() {
-			doRequest("POST", "/api/projects/billing-service/values", map[string]any{
-				"environment_id": stagingID,
-				"payload":        map[string]any{"service_name": "billing-v1"},
-			}, aliceID, "alice")
+			seedValues(aliceID, "billing-service", "staging", map[string]any{"service_name": "billing-v1"})
 		})
 
-		It("creates version 2 with updated payload", func() {
-			rec := doRequest("POST", "/api/projects/billing-service/envs/staging/values/versions", map[string]any{
-				"payload": map[string]any{"service_name": "billing-v2"},
-			}, aliceID, "alice")
-
-			Expect(rec.Code).To(Equal(http.StatusCreated))
-			body := decode[map[string]any](rec)
-			Expect(body["version_id"]).To(BeEquivalentTo(2))
-		})
-
-		It("preserves version 1 immutably", func() {
-			doRequest("POST", "/api/projects/billing-service/envs/staging/values/versions", map[string]any{
-				"payload": map[string]any{"service_name": "billing-v2"},
-			}, aliceID, "alice")
+		It("preserves version 1 immutably after a new version", func() {
+			seedValues(aliceID, "billing-service", "staging", map[string]any{"service_name": "billing-v2"})
 
 			rec := doRequest("GET", "/api/projects/billing-service/envs/staging/values/versions/1", nil, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusOK))
-			body := decode[map[string]any](rec)
-			payload := body["payload"].(map[string]any)
-			Expect(payload["service_name"]).To(Equal("billing-v1"))
+			Expect(decode[map[string]any](rec)["payload"].(map[string]any)["service_name"]).To(Equal("billing-v1"))
 		})
 
 		It("returns the latest version by default", func() {
-			doRequest("POST", "/api/projects/billing-service/envs/staging/values/versions", map[string]any{
-				"payload": map[string]any{"service_name": "billing-v2"},
-			}, aliceID, "alice")
+			seedValues(aliceID, "billing-service", "staging", map[string]any{"service_name": "billing-v2"})
 
 			rec := doRequest("GET", "/api/projects/billing-service/envs/staging/values", nil, aliceID, "alice")
-			Expect(rec.Code).To(Equal(http.StatusOK))
-			body := decode[map[string]any](rec)
-			Expect(body["version_id"]).To(BeEquivalentTo(2))
+			Expect(decode[map[string]any](rec)["version_id"]).To(BeEquivalentTo(2))
 		})
 	})
 
@@ -105,12 +82,10 @@ var _ = Describe("Project Config Values", func() {
 			})
 		})
 
-		It("stores ${global_values.key} reference strings verbatim", func() {
-			rec := doRequest("POST", "/api/projects/billing-service/values", map[string]any{
-				"environment_id": stagingID,
+		It("stores ${global_values.key} reference strings verbatim through a merge", func() {
+			rec := doRequest("PUT", "/api/workspace/billing-service/envs/staging/values", map[string]any{
 				"payload": map[string]any{
 					"service_name": "billing",
-					"env":          "staging",
 					"db_host":      "${test_db_values.host}",
 					"db_port":      "${test_db_values.port}",
 					"db_user":      "${test_db_values.username}",
@@ -121,14 +96,13 @@ var _ = Describe("Project Config Values", func() {
 					},
 				},
 			}, aliceID, "alice")
+			Expect(rec.Code).To(Equal(http.StatusOK))
 
-			Expect(rec.Code).To(Equal(http.StatusCreated))
+			submitApproveMerge(aliceID, "alice", "billing-service")
 
-			// Verify references are stored as-is (resolution happens at render time)
 			rec = doRequest("GET", "/api/projects/billing-service/envs/staging/values", nil, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusOK))
-			body := decode[map[string]any](rec)
-			payload := body["payload"].(map[string]any)
+			payload := decode[map[string]any](rec)["payload"].(map[string]any)
 			Expect(payload["db_host"]).To(Equal("${test_db_values.host}"))
 			Expect(payload["db_port"]).To(Equal("${test_db_values.port}"))
 			Expect(payload["db_user"]).To(Equal("${test_db_values.username}"))

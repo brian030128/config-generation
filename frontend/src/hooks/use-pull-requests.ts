@@ -76,19 +76,106 @@ export function useActiveDraft(projectName: string) {
   })
 }
 
-export function useStageChange(projectName: string) {
+// invalidateWorkspace refreshes the active draft (and its overlay reads) plus
+// the PR list after any staging mutation.
+function useWorkspaceInvalidator(projectName: string) {
   const qc = useQueryClient()
+  return () => {
+    qc.invalidateQueries({ queryKey: workspaceKeys.draft(projectName) })
+    qc.invalidateQueries({ queryKey: pullRequestKeys.all })
+  }
+}
+
+// useStageTemplate stages a template create (isNew) or edit into the workspace.
+export function useStageTemplate(projectName: string) {
+  const invalidate = useWorkspaceInvalidator(projectName)
   return useMutation({
-    mutationFn: (req: {
-      object_type: string
-      template_name?: string
-      environment_name?: string
-      proposed_payload: string
-    }) => pullRequestsApi.stageChange(projectName, req),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: workspaceKeys.draft(projectName) })
-      qc.invalidateQueries({ queryKey: pullRequestKeys.all })
-    },
+    mutationFn: (v: {
+      templateName: string
+      body: string
+      isNew?: boolean
+      commitMessage?: string
+    }) =>
+      v.isNew
+        ? pullRequestsApi.createTemplate(projectName, {
+            template_name: v.templateName,
+            body: v.body,
+            commit_message: v.commitMessage,
+          })
+        : pullRequestsApi.updateTemplate(projectName, v.templateName, {
+            body: v.body,
+            commit_message: v.commitMessage,
+          }),
+    onSuccess: invalidate,
+  })
+}
+
+export function useDeleteTemplate(projectName: string) {
+  const invalidate = useWorkspaceInvalidator(projectName)
+  return useMutation({
+    mutationFn: (templateName: string) =>
+      pullRequestsApi.deleteTemplate(projectName, templateName),
+    onSuccess: invalidate,
+  })
+}
+
+export function useStageEnvironment(projectName: string) {
+  const invalidate = useWorkspaceInvalidator(projectName)
+  return useMutation({
+    mutationFn: (v: { name: string; description?: string }) =>
+      pullRequestsApi.createEnvironment(projectName, v),
+    onSuccess: invalidate,
+  })
+}
+
+export function useDeleteEnvironment(projectName: string) {
+  const invalidate = useWorkspaceInvalidator(projectName)
+  return useMutation({
+    mutationFn: (envName: string) =>
+      pullRequestsApi.deleteEnvironment(projectName, envName),
+    onSuccess: invalidate,
+  })
+}
+
+export function useStageValues(projectName: string) {
+  const invalidate = useWorkspaceInvalidator(projectName)
+  return useMutation({
+    mutationFn: (v: {
+      envName: string
+      payload: Record<string, unknown>
+      commitMessage?: string
+    }) =>
+      pullRequestsApi.putValues(projectName, v.envName, {
+        payload: v.payload,
+        commit_message: v.commitMessage,
+      }),
+    onSuccess: invalidate,
+  })
+}
+
+export function useDeleteValues(projectName: string) {
+  const invalidate = useWorkspaceInvalidator(projectName)
+  return useMutation({
+    mutationFn: (envName: string) =>
+      pullRequestsApi.deleteValues(projectName, envName),
+    onSuccess: invalidate,
+  })
+}
+
+export function useUnstageChange(projectName: string) {
+  const invalidate = useWorkspaceInvalidator(projectName)
+  return useMutation({
+    mutationFn: (changeID: number) =>
+      pullRequestsApi.unstageChange(projectName, changeID),
+    onSuccess: invalidate,
+  })
+}
+
+export function useDiscardWorkspace(projectName: string) {
+  const invalidate = useWorkspaceInvalidator(projectName)
+  return useMutation({
+    mutationFn: () => pullRequestsApi.discardWorkspace(projectName),
+    onSuccess: invalidate,
   })
 }
 

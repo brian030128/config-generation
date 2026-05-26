@@ -189,19 +189,22 @@ Tracks which Global Values versions were used per deployment entry.
 
 ### 5.2 `pr_changes`
 
-Each row is a proposed full-copy snapshot of one versioned object within a PR.
+Each row is one staged change within a PR: a proposed full-copy snapshot for a create/update,
+or a removal intent for a delete. The `operation` distinguishes them. Project PRs may also carry
+**environment** create/delete (a non-versioned, structural change).
 
 | Column | Type | Constraints |
 |---|---|---|
 | `id` | `BIGINT` | PK, auto-increment |
 | `pr_id` | `BIGINT` | FK → `pull_requests.id`, NOT NULL |
-| `object_type` | `TEXT` | NOT NULL, CHECK IN (`'template'`, `'values'`, `'global_values'`) |
+| `object_type` | `TEXT` | NOT NULL, CHECK IN (`'template'`, `'values'`, `'environment'`, `'global_values'`) |
+| `operation` | `TEXT` | NOT NULL, CHECK IN (`'create'`, `'update'`, `'delete'`) |
 | `project_id` | `BIGINT` | FK → `projects.id`, nullable (null for global_values) |
-| `template_name` | `TEXT` | nullable (null for global_values) |
-| `environment_id` | `BIGINT` | FK → `environments.id`, nullable (only for values) |
+| `template_name` | `TEXT` | nullable (null for values/environment/global_values) |
+| `environment_name` | `TEXT` | nullable — set for `values` and `environment` changes (the env may not exist yet on a create, so the name is carried rather than an FK) |
 | `global_values_name` | `TEXT` | nullable (only for global_values) |
-| `base_version_id` | `INTEGER` | NOT NULL — latest version when change was added to PR |
-| `proposed_payload` | `TEXT` | NOT NULL — full content of proposed new version |
+| `base_version_id` | `INTEGER` | nullable — latest version when the change was added (for conflict detection on versioned objects; null for deletes and environment changes) |
+| `proposed_payload` | `TEXT` | nullable — full content of the proposed new version for create/update (null for deletes) |
 | `created_at` | `TIMESTAMPTZ` | NOT NULL, DEFAULT now() |
 
 ### 5.3 `pr_approvals`
