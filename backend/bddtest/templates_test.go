@@ -38,6 +38,21 @@ features:
 			}, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusOK))
 
+			By("staging an environment and values so the template can render")
+			doRequest("POST", "/api/workspace/billing-service/environments", map[string]any{"name": "staging"}, aliceID, "alice")
+			rec = doRequest("PUT", "/api/workspace/billing-service/envs/staging/values", map[string]any{
+				"payload": map[string]any{
+					"service_name":  "billing",
+					"env":           "staging",
+					"db_host":       "db.internal",
+					"db_port":       "5432",
+					"db_user":       "app",
+					"db_password":   "s3cret",
+					"feature_flags": map[string]any{"new_checkout": true},
+				},
+			}, aliceID, "alice")
+			Expect(rec.Code).To(Equal(http.StatusOK))
+
 			submitApproveMerge(aliceID, "alice", "billing-service")
 
 			rec = doRequest("GET", "/api/projects/billing-service/templates/app.yaml", nil, aliceID, "alice")

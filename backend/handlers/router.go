@@ -220,6 +220,10 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 				r.With(perm(db, "read", "project_values", param("projectName"), param("envName"), nil)).
 					Get("/envs/{envName}/values", pr.OverlayValues)
 
+				// Pre-submit validation (renders the overlay against every environment)
+				r.With(perm(db, "read", "project_templates", param("projectName"), nil, nil)).
+					Get("/validate", pr.ValidateWorkspace)
+
 				// Change set / unstage
 				r.With(perm(db, "read", "project_templates", param("projectName"), nil, nil)).
 					Get("/changes", pr.ListChanges)

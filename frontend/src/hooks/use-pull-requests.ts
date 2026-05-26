@@ -66,6 +66,8 @@ export function useApprovePullRequest() {
 
 export const workspaceKeys = {
   draft: (projectName: string) => ["workspace", projectName, "draft"] as const,
+  validate: (projectName: string) =>
+    ["workspace", projectName, "validate"] as const,
 }
 
 export function useActiveDraft(projectName: string) {
@@ -76,12 +78,23 @@ export function useActiveDraft(projectName: string) {
   })
 }
 
-// invalidateWorkspace refreshes the active draft (and its overlay reads) plus
-// the PR list after any staging mutation.
+// useValidateWorkspace reports whether the workspace can be submitted. Enabled
+// only while there is something to submit (a draft with staged changes).
+export function useValidateWorkspace(projectName: string, enabled: boolean) {
+  return useQuery({
+    queryKey: workspaceKeys.validate(projectName),
+    queryFn: () => pullRequestsApi.validateWorkspace(projectName),
+    enabled: !!projectName && enabled,
+  })
+}
+
+// invalidateWorkspace refreshes the active draft, its overlay reads, and the
+// validation result, plus the PR list, after any staging mutation. The
+// ["workspace", projectName] prefix matches both the draft and validate queries.
 function useWorkspaceInvalidator(projectName: string) {
   const qc = useQueryClient()
   return () => {
-    qc.invalidateQueries({ queryKey: workspaceKeys.draft(projectName) })
+    qc.invalidateQueries({ queryKey: ["workspace", projectName] })
     qc.invalidateQueries({ queryKey: pullRequestKeys.all })
   }
 }

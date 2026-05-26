@@ -536,29 +536,18 @@ func (h *PullRequestHandler) stagedChangesByKey(ctx context.Context, projectID, 
 	return out, nil
 }
 
-func (h *PullRequestHandler) OverlayTemplates(w http.ResponseWriter, r *http.Request) {
-	user := currentUser(r)
-	projectName := chi.URLParam(r, "projectName")
-	projectID, err := h.resolveProjectIDByName(r.Context(), projectName)
-	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "project not found", "not_found")
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
-		return
-	}
-
-	// Live latest of each template.
-	rows, err := h.DB.QueryContext(r.Context(), `
+// effectiveTemplates returns the workspace overlay templates: live latest of
+// each template merged with the caller's staged changes, with staged deletes
+// hidden. Staged-new templates have VersionID 0.
+func (h *PullRequestHandler) effectiveTemplates(ctx context.Context, projectID, userID int64) ([]models.WorkspaceTemplateItem, error) {
+	rows, err := h.DB.QueryContext(ctx, `
 		SELECT DISTINCT ON (template_name) template_name, version_id, body
 		FROM project_config_templates
 		WHERE project_id = $1
 		ORDER BY template_name, version_id DESC
 	`, projectID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
-		return
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -572,21 +561,18 @@ func (h *PullRequestHandler) OverlayTemplates(w http.ResponseWriter, r *http.Req
 		var name, body string
 		var version int
 		if err := rows.Scan(&name, &version, &body); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
-			return
+			return nil, err
 		}
 		live[name] = liveTmpl{version: version, body: body}
 		order = append(order, name)
 	}
 	if err := rows.Err(); err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
-		return
+		return nil, err
 	}
 
-	staged, err := h.stagedChangesByKey(r.Context(), projectID, user.UserID, "template")
+	staged, err := h.stagedChangesByKey(ctx, projectID, userID, "template")
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
-		return
+		return nil, err
 	}
 
 	items := []models.WorkspaceTemplateItem{}
@@ -614,6 +600,27 @@ func (h *PullRequestHandler) OverlayTemplates(w http.ResponseWriter, r *http.Req
 		items = append(items, models.WorkspaceTemplateItem{
 			TemplateName: name, Body: c.ProposedPayload, VersionID: 0, Staged: true, Operation: c.Operation,
 		})
+	}
+	return items, nil
+}
+
+func (h *PullRequestHandler) OverlayTemplates(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r)
+	projectName := chi.URLParam(r, "projectName")
+	projectID, err := h.resolveProjectIDByName(r.Context(), projectName)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+
+	items, err := h.effectiveTemplates(r.Context(), projectID, user.UserID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
 	}
 
 	writeJSON(w, http.StatusOK, models.ListResponse[models.WorkspaceTemplateItem]{Items: items, Count: len(items)})
@@ -670,24 +677,14 @@ func (h *PullRequestHandler) OverlayTemplate(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-func (h *PullRequestHandler) OverlayEnvironments(w http.ResponseWriter, r *http.Request) {
-	user := currentUser(r)
-	projectName := chi.URLParam(r, "projectName")
-	projectID, err := h.resolveProjectIDByName(r.Context(), projectName)
-	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "project not found", "not_found")
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
-		return
-	}
-
-	rows, err := h.DB.QueryContext(r.Context(),
+// effectiveEnvironments returns the workspace overlay environments: live
+// environments merged with the caller's staged changes, with staged deletes
+// hidden.
+func (h *PullRequestHandler) effectiveEnvironments(ctx context.Context, projectID, userID int64) ([]models.WorkspaceEnvironmentItem, error) {
+	rows, err := h.DB.QueryContext(ctx,
 		`SELECT name FROM environments WHERE project_id = $1 ORDER BY name`, projectID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
-		return
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -696,21 +693,18 @@ func (h *PullRequestHandler) OverlayEnvironments(w http.ResponseWriter, r *http.
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
-			return
+			return nil, err
 		}
 		live[name] = true
 		order = append(order, name)
 	}
 	if err := rows.Err(); err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
-		return
+		return nil, err
 	}
 
-	staged, err := h.stagedChangesByKey(r.Context(), projectID, user.UserID, "environment")
+	staged, err := h.stagedChangesByKey(ctx, projectID, userID, "environment")
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
-		return
+		return nil, err
 	}
 
 	items := []models.WorkspaceEnvironmentItem{}
@@ -732,8 +726,76 @@ func (h *PullRequestHandler) OverlayEnvironments(w http.ResponseWriter, r *http.
 		}
 		items = append(items, models.WorkspaceEnvironmentItem{Name: name, Staged: true, Operation: c.Operation})
 	}
+	return items, nil
+}
+
+func (h *PullRequestHandler) OverlayEnvironments(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r)
+	projectName := chi.URLParam(r, "projectName")
+	projectID, err := h.resolveProjectIDByName(r.Context(), projectName)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+
+	items, err := h.effectiveEnvironments(r.Context(), projectID, user.UserID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
 
 	writeJSON(w, http.StatusOK, models.ListResponse[models.WorkspaceEnvironmentItem]{Items: items, Count: len(items)})
+}
+
+// valuesState describes the workspace state of an environment's values.
+type valuesState int
+
+const (
+	valuesPresent valuesState = iota // effective values exist (live or staged upsert)
+	valuesDeleted                    // staged for deletion in the workspace
+	valuesAbsent                     // none live and none staged
+)
+
+// effectiveValues returns the workspace overlay values for one environment: the
+// caller's staged change if any, otherwise the live latest. The returned state
+// distinguishes present values from a staged delete and from absence entirely.
+func (h *PullRequestHandler) effectiveValues(ctx context.Context, projectID, userID int64, envName string) (models.WorkspaceValuesResponse, valuesState, error) {
+	staged, err := h.stagedChangesByKey(ctx, projectID, userID, "values")
+	if err != nil {
+		return models.WorkspaceValuesResponse{}, valuesAbsent, err
+	}
+
+	var liveVersion int
+	var livePayload json.RawMessage
+	liveErr := h.DB.QueryRowContext(ctx, `
+		SELECT v.version_id, v.payload
+		FROM project_config_values v
+		JOIN environments e ON e.id = v.environment_id
+		WHERE v.project_id = $1 AND e.name = $2
+		ORDER BY v.version_id DESC LIMIT 1
+	`, projectID, envName).Scan(&liveVersion, &livePayload)
+	if liveErr != nil && liveErr != sql.ErrNoRows {
+		return models.WorkspaceValuesResponse{}, valuesAbsent, liveErr
+	}
+
+	if c, ok := staged[envName]; ok {
+		if c.Operation == "delete" {
+			return models.WorkspaceValuesResponse{}, valuesDeleted, nil
+		}
+		return models.WorkspaceValuesResponse{
+			EnvironmentName: envName, Payload: json.RawMessage(c.ProposedPayload), VersionID: liveVersion, Staged: true, Operation: c.Operation,
+		}, valuesPresent, nil
+	}
+	if liveErr == sql.ErrNoRows {
+		return models.WorkspaceValuesResponse{}, valuesAbsent, nil
+	}
+	return models.WorkspaceValuesResponse{
+		EnvironmentName: envName, Payload: livePayload, VersionID: liveVersion,
+	}, valuesPresent, nil
 }
 
 func (h *PullRequestHandler) OverlayValues(w http.ResponseWriter, r *http.Request) {
@@ -750,41 +812,17 @@ func (h *PullRequestHandler) OverlayValues(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	staged, err := h.stagedChangesByKey(r.Context(), projectID, user.UserID, "values")
+	resp, state, err := h.effectiveValues(r.Context(), projectID, user.UserID, envName)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "database error", "internal")
 		return
 	}
-
-	var liveVersion int
-	var livePayload json.RawMessage
-	liveErr := h.DB.QueryRowContext(r.Context(), `
-		SELECT v.version_id, v.payload
-		FROM project_config_values v
-		JOIN environments e ON e.id = v.environment_id
-		WHERE v.project_id = $1 AND e.name = $2
-		ORDER BY v.version_id DESC LIMIT 1
-	`, projectID, envName).Scan(&liveVersion, &livePayload)
-	if liveErr != nil && liveErr != sql.ErrNoRows {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
-		return
-	}
-
-	if c, ok := staged[envName]; ok {
-		if c.Operation == "delete" {
-			writeError(w, http.StatusNotFound, "values deleted in workspace", "not_found")
-			return
-		}
-		writeJSON(w, http.StatusOK, models.WorkspaceValuesResponse{
-			EnvironmentName: envName, Payload: json.RawMessage(c.ProposedPayload), VersionID: liveVersion, Staged: true, Operation: c.Operation,
-		})
-		return
-	}
-	if liveErr == sql.ErrNoRows {
+	switch state {
+	case valuesDeleted:
+		writeError(w, http.StatusNotFound, "values deleted in workspace", "not_found")
+	case valuesAbsent:
 		writeError(w, http.StatusNotFound, "values not found", "not_found")
-		return
+	default:
+		writeJSON(w, http.StatusOK, resp)
 	}
-	writeJSON(w, http.StatusOK, models.WorkspaceValuesResponse{
-		EnvironmentName: envName, Payload: livePayload, VersionID: liveVersion,
-	})
 }

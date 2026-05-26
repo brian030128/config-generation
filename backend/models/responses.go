@@ -60,6 +60,24 @@ type TemplateVariablesResponse struct {
 	Variables []TemplateVariable `json:"variables"`
 }
 
+// WorkspaceProblem is a single reason a workspace cannot be submitted: a
+// template/environment pair that fails to produce a valid config. Kind mirrors
+// services.RenderErrorKind plus the workspace-specific "no_environments".
+type WorkspaceProblem struct {
+	Kind            string   `json:"kind"` // no_environments|missing_values|unknown_global_values|unknown_key|template_parse|template_exec
+	TemplateName    string   `json:"template_name,omitempty"`
+	EnvironmentName string   `json:"environment_name,omitempty"`
+	MissingKeys     []string `json:"missing_keys,omitempty"`
+	Message         string   `json:"message"`
+}
+
+// WorkspaceValidationResponse is returned by the workspace validate endpoint and
+// embedded in the 422 body when a submit is blocked.
+type WorkspaceValidationResponse struct {
+	Valid    bool               `json:"valid"`
+	Problems []WorkspaceProblem `json:"problems"`
+}
+
 type TemplateRenderResult struct {
 	TemplateName         string  `json:"template_name"`
 	RenderedOutput       *string `json:"rendered_output,omitempty"`

@@ -913,6 +913,28 @@ func (h *PullRequestHandler) SubmitDraft(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Block submitting a project workspace whose staged config cannot render
+	// (e.g. a template was created but no environment supplies its values).
+	if pr.ProjectID != nil {
+		problems, verr := h.validateWorkspace(r.Context(), *pr.ProjectID, user.UserID)
+		if verr != nil {
+			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			return
+		}
+		if len(problems) > 0 {
+			writeJSON(w, http.StatusUnprocessableEntity, struct {
+				Error    string                    `json:"error"`
+				Code     string                    `json:"code"`
+				Problems []models.WorkspaceProblem `json:"problems"`
+			}{
+				Error:    fmt.Sprintf("workspace has %d problem(s); resolve them before submitting", len(problems)),
+				Code:     "workspace_invalid",
+				Problems: problems,
+			})
+			return
+		}
+	}
+
 	err = h.DB.QueryRowContext(r.Context(), `
 		UPDATE pull_requests SET title = $2, description = $3, status = 'open', updated_at = NOW()
 		WHERE id = $1

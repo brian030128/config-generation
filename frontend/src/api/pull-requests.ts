@@ -4,6 +4,7 @@ import type {
   PullRequest,
   PRChange,
   CreatePullRequestRequest,
+  WorkspaceValidationResponse,
 } from "./types"
 
 export const pullRequestsApi = {
@@ -46,6 +47,11 @@ export const pullRequestsApi = {
   listChanges: (projectName: string) =>
     client
       .get<ListResponse<PRChange>>(`/workspace/${projectName}/changes`)
+      .then((r) => r.data),
+
+  validateWorkspace: (projectName: string) =>
+    client
+      .get<WorkspaceValidationResponse>(`/workspace/${projectName}/validate`)
       .then((r) => r.data),
 
   unstageChange: (projectName: string, changeID: number) =>

@@ -223,6 +223,19 @@ func submitApproveMergeBy(authorID int64, authorName string, approverID int64, a
 	Expect(rec.Code).To(Equal(http.StatusOK))
 }
 
+// seedGlobalValues seeds a published global values entry (v1) directly in the
+// DB, for tests that need a ${name.key} reference to resolve during validation.
+func seedGlobalValues(userID int64, name string, payload map[string]any) {
+	GinkgoHelper()
+	raw, err := json.Marshal(payload)
+	Expect(err).NotTo(HaveOccurred())
+	_, err = testDB.ExecContext(context.Background(), `
+		INSERT INTO global_values (name, version_id, payload, created_by)
+		VALUES ($1, 1, $2, $3)
+	`, name, raw, userID)
+	Expect(err).NotTo(HaveOccurred())
+}
+
 func createGlobalValues(userID int64, username, name string, payload map[string]any) map[string]any {
 	rec := doRequest("POST", "/api/global-values", map[string]any{
 		"name":    name,
