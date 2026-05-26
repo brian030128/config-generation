@@ -123,6 +123,7 @@ type PRChange struct {
 	ID               int64     `json:"id"`
 	PRID             int64     `json:"pr_id"`
 	ObjectType       string    `json:"object_type"`
+	Operation        string    `json:"operation"`
 	ProjectID        *int64    `json:"project_id"`
 	TemplateName     *string   `json:"template_name"`
 	EnvironmentName  *string   `json:"environment_name"`

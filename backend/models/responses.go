@@ -30,6 +30,32 @@ type TemplateVariable struct {
 	Default *string `json:"default,omitempty"`
 }
 
+// Workspace overlay views: the published base merged with the caller's own
+// staged changes. `staged` marks an item touched by the active workspace;
+// `operation` is the staged operation (create|update|delete) when staged.
+
+type WorkspaceTemplateItem struct {
+	TemplateName string `json:"template_name"`
+	Body         string `json:"body"`
+	VersionID    int    `json:"version_id"` // live latest version; 0 if new in the workspace
+	Staged       bool   `json:"staged"`
+	Operation    string `json:"operation,omitempty"`
+}
+
+type WorkspaceEnvironmentItem struct {
+	Name      string `json:"name"`
+	Staged    bool   `json:"staged"`
+	Operation string `json:"operation,omitempty"`
+}
+
+type WorkspaceValuesResponse struct {
+	EnvironmentName string          `json:"environment_name"`
+	Payload         json.RawMessage `json:"payload"`
+	VersionID       int             `json:"version_id"` // live latest version; 0 if staged-new
+	Staged          bool            `json:"staged"`
+	Operation       string          `json:"operation,omitempty"`
+}
+
 type TemplateVariablesResponse struct {
 	Variables []TemplateVariable `json:"variables"`
 }

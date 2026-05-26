@@ -84,8 +84,7 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 					r.Route("/templates", func(r chi.Router) {
 						r.With(perm(db, "read", "project_templates", param("projectName"), nil, nil)).
 							Get("/", tmpl.ListForProject)
-						r.With(perm(db, "write", "project_templates", param("projectName"), nil, nil)).
-							Post("/", tmpl.Create)
+						// Authoring (create/edit/delete) goes through the workspace, not here.
 
 						r.Route("/{templateName}", func(r chi.Router) {
 							r.With(perm(db, "read", "project_templates", param("projectName"), nil, nil)).
@@ -96,8 +95,6 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 							r.Route("/versions", func(r chi.Router) {
 								r.With(perm(db, "read", "project_templates", param("projectName"), nil, nil)).
 									Get("/", tmpl.ListVersions)
-								r.With(perm(db, "write", "project_templates", param("projectName"), nil, nil)).
-									Post("/", tmpl.AppendVersion)
 								r.With(perm(db, "read", "project_templates", param("projectName"), nil, nil)).
 									Get("/{versionID}", tmpl.GetVersion)
 							})
@@ -108,18 +105,13 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 					r.With(perm(db, "read", "project_templates", param("projectName"), nil, nil)).
 						Get("/variables", tmpl.ProjectVariables)
 
-					// --- Values per (project, env) ---
-					r.With(perm(db, "create", "env_values", param("projectName"), nil, nil)).
-						Post("/values", vals.Create)
-
+					// --- Values per (project, env) — reads only; writes go through the workspace ---
 					r.Route("/envs/{envName}", func(r chi.Router) {
 						r.Route("/values", func(r chi.Router) {
 							r.With(perm(db, "read", "project_values", param("projectName"), param("envName"), nil)).
 								Get("/", vals.GetLatest)
 
 							r.Route("/versions", func(r chi.Router) {
-								r.With(perm(db, "write", "project_values", param("projectName"), param("envName"), nil)).
-									Post("/", vals.AppendVersion)
 								r.With(perm(db, "read", "project_values", param("projectName"), param("envName"), nil)).
 									Get("/{versionID}", vals.GetVersion)
 							})
@@ -187,10 +179,52 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 				r.Post("/{prID}/submit", pr.SubmitDraft)
 			})
 
-			// --- Workspace ---
+			// --- Workspace (the project write surface) ---
+			// The caller's single active Project PR. Every project mutation is
+			// staged here and applied only on merge; reads overlay the base with
+			// the caller's own staged changes.
 			r.Route("/workspace/{projectName}", func(r chi.Router) {
-				r.Get("/draft", pr.GetActiveDraft)
-				r.Post("/stage", pr.StageChange)
+				// Lifecycle
+				r.Get("/", pr.GetActiveDraft)
+				r.Get("/draft", pr.GetActiveDraft) // legacy alias
+				r.Delete("/", pr.DiscardWorkspace)
+
+				// Templates
+				r.With(perm(db, "write", "project_templates", param("projectName"), nil, nil)).
+					Post("/templates", pr.StageTemplateCreate)
+				r.With(perm(db, "write", "project_templates", param("projectName"), nil, nil)).
+					Put("/templates/{templateName}", pr.StageTemplateUpdate)
+				r.With(perm(db, "delete", "project_templates", param("projectName"), nil, nil)).
+					Delete("/templates/{templateName}", pr.StageTemplateDelete)
+
+				// Environments (delete needs the project-wide values delete grant)
+				r.With(perm(db, "create", "env_values", param("projectName"), nil, nil)).
+					Post("/environments", pr.StageEnvironmentCreate)
+				r.With(perm(db, "delete", "project_values", param("projectName"), middleware.Static("*"), nil)).
+					Delete("/environments/{envName}", pr.StageEnvironmentDelete)
+
+				// Values (upsert gated by write; creating a brand-new set additionally
+				// needs create:env_values, enforced in-handler)
+				r.With(perm(db, "write", "project_values", param("projectName"), param("envName"), nil)).
+					Put("/envs/{envName}/values", pr.StageValuesUpsert)
+				r.With(perm(db, "delete", "project_values", param("projectName"), param("envName"), nil)).
+					Delete("/envs/{envName}/values", pr.StageValuesDelete)
+
+				// Overlay reads (base + caller's staged changes)
+				r.With(perm(db, "read", "project_templates", param("projectName"), nil, nil)).
+					Get("/templates", pr.OverlayTemplates)
+				r.With(perm(db, "read", "project_templates", param("projectName"), nil, nil)).
+					Get("/templates/{templateName}", pr.OverlayTemplate)
+				r.With(perm(db, "read", "project_templates", param("projectName"), nil, nil)).
+					Get("/environments", pr.OverlayEnvironments)
+				r.With(perm(db, "read", "project_values", param("projectName"), param("envName"), nil)).
+					Get("/envs/{envName}/values", pr.OverlayValues)
+
+				// Change set / unstage
+				r.With(perm(db, "read", "project_templates", param("projectName"), nil, nil)).
+					Get("/changes", pr.ListChanges)
+				r.With(perm(db, "read", "project_templates", param("projectName"), nil, nil)).
+					Delete("/changes/{changeID}", pr.UnstageChange)
 			})
 
 			// --- Roles (non-project-scoped operations by role ID) ---

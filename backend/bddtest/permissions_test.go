@@ -62,6 +62,8 @@ func getAutoCreatedRoleID(userID int64, username, projectName string) float64 {
 	return 0
 }
 
+// Permission enforcement is now exercised on the workspace write surface (the
+// single write path); the underlying atoms are unchanged.
 var _ = Describe("Permission Model", func() {
 	var (
 		aliceID int64
@@ -91,12 +93,11 @@ var _ = Describe("Permission Model", func() {
 			Expect(rec.Code).To(Equal(http.StatusOK))
 		})
 
-		It("allows bob to write templates (direct grant)", func() {
-			rec := doRequest("POST", "/api/projects/billing/templates", map[string]any{
-				"template_name": "new.yaml",
-				"body":          "new template",
+		It("allows bob to stage a template (direct write grant)", func() {
+			rec := doRequest("POST", "/api/workspace/billing/templates", map[string]any{
+				"template_name": "new.yaml", "body": "new template",
 			}, bobID, "bob")
-			Expect(rec.Code).To(Equal(http.StatusCreated))
+			Expect(rec.Code).To(Equal(http.StatusOK))
 		})
 
 		It("denies read on a different project without permission", func() {
@@ -111,39 +112,29 @@ var _ = Describe("Permission Model", func() {
 	})
 
 	Context("create:env_values implies write:project_values (spec section 3.2)", func() {
-		var stagingID float64
-
 		BeforeEach(func() {
-			env := createEnvironment(aliceID, "alice", "billing", "staging")
-			stagingID = env["id"].(float64)
+			createEnvironment(aliceID, "alice", "billing", "staging")
 			createTemplate(aliceID, "alice", "billing", "app.yaml", "{{ .service_name }}")
 		})
 
-		It("allows alice to create new value sets (create:env_values from project_admin)", func() {
-			rec := doRequest("POST", "/api/projects/billing/values", map[string]any{
-				"environment_id": stagingID,
-				"payload":        map[string]any{"service_name": "billing"},
+		It("allows alice to stage a new value set (create:env_values from project_admin)", func() {
+			rec := doRequest("PUT", "/api/workspace/billing/envs/staging/values", map[string]any{
+				"payload": map[string]any{"service_name": "billing"},
 			}, aliceID, "alice")
-			Expect(rec.Code).To(Equal(http.StatusCreated))
+			Expect(rec.Code).To(Equal(http.StatusOK))
 		})
 
-		It("allows alice to append versions (write implied by create)", func() {
-			doRequest("POST", "/api/projects/billing/values", map[string]any{
-				"environment_id": stagingID,
-				"payload":        map[string]any{"service_name": "billing-v1"},
-			}, aliceID, "alice")
+		It("allows alice to edit existing values (write implied by create)", func() {
+			seedValues(aliceID, "billing", "staging", map[string]any{"service_name": "billing-v1"})
 
-			rec := doRequest("POST", "/api/projects/billing/envs/staging/values/versions", map[string]any{
+			rec := doRequest("PUT", "/api/workspace/billing/envs/staging/values", map[string]any{
 				"payload": map[string]any{"service_name": "billing-v2"},
 			}, aliceID, "alice")
-			Expect(rec.Code).To(Equal(http.StatusCreated))
+			Expect(rec.Code).To(Equal(http.StatusOK))
 		})
 
 		It("allows alice to read values (read implied transitively)", func() {
-			doRequest("POST", "/api/projects/billing/values", map[string]any{
-				"environment_id": stagingID,
-				"payload":        map[string]any{"service_name": "billing"},
-			}, aliceID, "alice")
+			seedValues(aliceID, "billing", "staging", map[string]any{"service_name": "billing"})
 
 			rec := doRequest("GET", "/api/projects/billing/envs/staging/values", nil, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusOK))
@@ -151,23 +142,12 @@ var _ = Describe("Permission Model", func() {
 	})
 
 	Context("wildcard matching (spec section 2.2)", func() {
-		var stagingID, prodID float64
-
 		BeforeEach(func() {
-			env := createEnvironment(aliceID, "alice", "billing", "staging")
-			stagingID = env["id"].(float64)
-			env = createEnvironment(aliceID, "alice", "billing", "prod")
-			prodID = env["id"].(float64)
+			createEnvironment(aliceID, "alice", "billing", "staging")
+			createEnvironment(aliceID, "alice", "billing", "prod")
 			createTemplate(aliceID, "alice", "billing", "app.yaml", "{{ .env }}")
-
-			doRequest("POST", "/api/projects/billing/values", map[string]any{
-				"environment_id": stagingID,
-				"payload":        map[string]any{"env": "staging"},
-			}, aliceID, "alice")
-			doRequest("POST", "/api/projects/billing/values", map[string]any{
-				"environment_id": prodID,
-				"payload":        map[string]any{"env": "prod"},
-			}, aliceID, "alice")
+			seedValues(aliceID, "billing", "staging", map[string]any{"env": "staging"})
+			seedValues(aliceID, "billing", "prod", map[string]any{"env": "prod"})
 
 			roleID := createCustomRole(aliceID, "alice", "billing", "billing-all-envs", []map[string]any{
 				{"action": "write", "resource": "project_values", "key_project": "billing", "key_env": "*"},
@@ -175,18 +155,18 @@ var _ = Describe("Permission Model", func() {
 			assignUserToRole(aliceID, "alice", roleID, bobID)
 		})
 
-		It("allows bob to write values for staging (covered by wildcard)", func() {
-			rec := doRequest("POST", "/api/projects/billing/envs/staging/values/versions", map[string]any{
+		It("allows bob to edit staging values (covered by wildcard)", func() {
+			rec := doRequest("PUT", "/api/workspace/billing/envs/staging/values", map[string]any{
 				"payload": map[string]any{"env": "staging-v2"},
 			}, bobID, "bob")
-			Expect(rec.Code).To(Equal(http.StatusCreated))
+			Expect(rec.Code).To(Equal(http.StatusOK))
 		})
 
-		It("allows bob to write values for prod (also covered by wildcard)", func() {
-			rec := doRequest("POST", "/api/projects/billing/envs/prod/values/versions", map[string]any{
+		It("allows bob to edit prod values (also covered by wildcard)", func() {
+			rec := doRequest("PUT", "/api/workspace/billing/envs/prod/values", map[string]any{
 				"payload": map[string]any{"env": "prod-v2"},
 			}, bobID, "bob")
-			Expect(rec.Code).To(Equal(http.StatusCreated))
+			Expect(rec.Code).To(Equal(http.StatusOK))
 		})
 
 		It("allows bob to read values for any env (write implies read)", func() {
@@ -199,13 +179,9 @@ var _ = Describe("Permission Model", func() {
 	})
 
 	Context("Alice and Bob scenario (spec section 5.1 and 5.2)", func() {
-		var stagingID, euProdID float64
-
 		BeforeEach(func() {
-			env := createEnvironment(aliceID, "alice", "billing", "staging")
-			stagingID = env["id"].(float64)
-			env = createEnvironment(aliceID, "alice", "billing", "eu-prod")
-			euProdID = env["id"].(float64)
+			createEnvironment(aliceID, "alice", "billing", "staging")
+			createEnvironment(aliceID, "alice", "billing", "eu-prod")
 			createTemplate(aliceID, "alice", "billing", "app.yaml", "{{ .env }}")
 
 			roleID := createCustomRole(aliceID, "alice", "billing", "billing-staging-writer", []map[string]any{
@@ -214,41 +190,33 @@ var _ = Describe("Permission Model", func() {
 			assignUserToRole(aliceID, "alice", roleID, bobID)
 		})
 
-		It("alice can create eu-prod values (she has create:env_values)", func() {
-			rec := doRequest("POST", "/api/projects/billing/values", map[string]any{
-				"environment_id": euProdID,
-				"payload":        map[string]any{"env": "eu-prod"},
+		It("alice can stage eu-prod values (she has create:env_values)", func() {
+			rec := doRequest("PUT", "/api/workspace/billing/envs/eu-prod/values", map[string]any{
+				"payload": map[string]any{"env": "eu-prod"},
 			}, aliceID, "alice")
-			Expect(rec.Code).To(Equal(http.StatusCreated))
+			Expect(rec.Code).To(Equal(http.StatusOK))
 		})
 
 		It("bob can edit existing staging values (he has write:project_values(billing,staging))", func() {
-			doRequest("POST", "/api/projects/billing/values", map[string]any{
-				"environment_id": stagingID,
-				"payload":        map[string]any{"env": "staging"},
-			}, aliceID, "alice")
+			seedValues(aliceID, "billing", "staging", map[string]any{"env": "staging"})
 
-			rec := doRequest("POST", "/api/projects/billing/envs/staging/values/versions", map[string]any{
+			rec := doRequest("PUT", "/api/workspace/billing/envs/staging/values", map[string]any{
 				"payload": map[string]any{"env": "staging-v2"},
 			}, bobID, "bob")
-			Expect(rec.Code).To(Equal(http.StatusCreated))
+			Expect(rec.Code).To(Equal(http.StatusOK))
 		})
 
-		It("bob cannot create new values for eu-prod (no create:env_values)", func() {
-			rec := doRequest("POST", "/api/projects/billing/values", map[string]any{
-				"environment_id": euProdID,
-				"payload":        map[string]any{"env": "eu-prod"},
+		It("bob cannot stage new values for eu-prod (no write:project_values(billing,eu-prod))", func() {
+			rec := doRequest("PUT", "/api/workspace/billing/envs/eu-prod/values", map[string]any{
+				"payload": map[string]any{"env": "eu-prod"},
 			}, bobID, "bob")
 			Expect(rec.Code).To(Equal(http.StatusForbidden))
 		})
 
-		It("bob cannot write values for eu-prod (no write:project_values(billing,eu-prod))", func() {
-			doRequest("POST", "/api/projects/billing/values", map[string]any{
-				"environment_id": euProdID,
-				"payload":        map[string]any{"env": "eu-prod"},
-			}, aliceID, "alice")
+		It("bob cannot edit eu-prod values (no write:project_values(billing,eu-prod))", func() {
+			seedValues(aliceID, "billing", "eu-prod", map[string]any{"env": "eu-prod"})
 
-			rec := doRequest("POST", "/api/projects/billing/envs/eu-prod/values/versions", map[string]any{
+			rec := doRequest("PUT", "/api/workspace/billing/envs/eu-prod/values", map[string]any{
 				"payload": map[string]any{"env": "eu-prod-v2"},
 			}, bobID, "bob")
 			Expect(rec.Code).To(Equal(http.StatusForbidden))

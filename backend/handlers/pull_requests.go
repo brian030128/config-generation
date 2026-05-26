@@ -88,13 +88,13 @@ func (h *PullRequestHandler) Create(w http.ResponseWriter, r *http.Request) {
 	// Create the pr_changes row.
 	var change models.PRChange
 	err = tx.QueryRowContext(r.Context(), `
-		INSERT INTO pr_changes (pr_id, object_type, global_values_name, base_version_id, proposed_payload)
-		VALUES ($1, 'global_values', $2, $3, $4)
-		RETURNING id, pr_id, object_type, project_id, template_name,
+		INSERT INTO pr_changes (pr_id, object_type, operation, global_values_name, base_version_id, proposed_payload)
+		VALUES ($1, 'global_values', 'update', $2, $3, $4)
+		RETURNING id, pr_id, object_type, operation, project_id, template_name,
 		          environment_name, global_values_name, base_version_id,
 		          proposed_payload, created_at
 	`, pr.ID, *req.GlobalValuesName, baseVersionID, req.ProposedPayload).Scan(
-		&change.ID, &change.PRID, &change.ObjectType, &change.ProjectID,
+		&change.ID, &change.PRID, &change.ObjectType, &change.Operation, &change.ProjectID,
 		&change.TemplateName, &change.EnvironmentName, &change.GlobalValuesName,
 		&change.BaseVersionID, &change.ProposedPayload, &change.CreatedAt,
 	)
@@ -576,7 +576,7 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 
 	// Load changes.
 	changeRows, err := tx.QueryContext(r.Context(), `
-		SELECT id, pr_id, object_type, project_id, template_name,
+		SELECT id, pr_id, object_type, operation, project_id, template_name,
 		       environment_name, global_values_name, base_version_id,
 		       proposed_payload, created_at
 		FROM pr_changes WHERE pr_id = $1
@@ -591,7 +591,7 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 	for changeRows.Next() {
 		var c models.PRChange
 		if err := changeRows.Scan(
-			&c.ID, &c.PRID, &c.ObjectType, &c.ProjectID, &c.TemplateName,
+			&c.ID, &c.PRID, &c.ObjectType, &c.Operation, &c.ProjectID, &c.TemplateName,
 			&c.EnvironmentName, &c.GlobalValuesName, &c.BaseVersionID,
 			&c.ProposedPayload, &c.CreatedAt,
 		); err != nil {
@@ -616,8 +616,23 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 
 			switch c.ObjectType {
 			case "environment":
-				if c.ProjectID == nil {
+				if c.ProjectID == nil || c.EnvironmentName == nil {
 					continue
+				}
+				if c.Operation == "delete" {
+					// Tear down the env's value sets first (FK), then the env itself.
+					if _, err = tx.ExecContext(r.Context(), `
+						DELETE FROM project_config_values
+						WHERE project_id = $1 AND environment_id =
+							(SELECT id FROM environments WHERE project_id = $1 AND name = $2)
+					`, *c.ProjectID, *c.EnvironmentName); err != nil {
+						writeError(w, http.StatusInternalServerError, "failed to apply change", "internal")
+						return
+					}
+					_, err = tx.ExecContext(r.Context(), `
+						DELETE FROM environments WHERE project_id = $1 AND name = $2
+					`, *c.ProjectID, *c.EnvironmentName)
+					break
 				}
 				var envReq models.CreateEnvironmentRequest
 				if jsonErr := json.Unmarshal([]byte(c.ProposedPayload), &envReq); jsonErr != nil {
@@ -626,6 +641,7 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 				_, err = tx.ExecContext(r.Context(), `
 					INSERT INTO environments (project_id, name, description, created_by)
 					VALUES ($1, $2, $3, $4)
+					ON CONFLICT (project_id, name) DO NOTHING
 				`, *c.ProjectID, envReq.Name, envReq.Description, pr.AuthorID)
 
 			case "global_values":
@@ -654,6 +670,12 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 				if c.ProjectID == nil || c.TemplateName == nil {
 					continue
 				}
+				if c.Operation == "delete" {
+					_, err = tx.ExecContext(r.Context(), `
+						DELETE FROM project_config_templates WHERE project_id = $1 AND template_name = $2
+					`, *c.ProjectID, *c.TemplateName)
+					break
+				}
 				var nextVersion int
 				err = tx.QueryRowContext(r.Context(), `
 					SELECT COALESCE(
@@ -680,9 +702,24 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 				err = tx.QueryRowContext(r.Context(), `
 					SELECT id FROM environments WHERE project_id = $1 AND name = $2
 				`, *c.ProjectID, *c.EnvironmentName).Scan(&envID)
-				if err != nil {
+				if err == sql.ErrNoRows {
+					// If the env is gone (e.g. deleted in the same PR), a values
+					// delete is a no-op; anything else is an error.
+					if c.Operation == "delete" {
+						continue
+					}
 					writeError(w, http.StatusInternalServerError, "environment not found during merge", "internal")
 					return
+				}
+				if err != nil {
+					writeError(w, http.StatusInternalServerError, "database error", "internal")
+					return
+				}
+				if c.Operation == "delete" {
+					_, err = tx.ExecContext(r.Context(), `
+						DELETE FROM project_config_values WHERE project_id = $1 AND environment_id = $2
+					`, *c.ProjectID, envID)
+					break
 				}
 				var nextVersion int
 				err = tx.QueryRowContext(r.Context(), `
@@ -829,206 +866,6 @@ func (h *PullRequestHandler) GetActiveDraft(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, pr)
 }
 
-// StageChange adds or updates a change in the user's active PR for a project.
-func (h *PullRequestHandler) StageChange(w http.ResponseWriter, r *http.Request) {
-	user := currentUser(r)
-	projectName := chi.URLParam(r, "projectName")
-
-	var req models.StageChangeRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body", "bad_request")
-		return
-	}
-	if req.ObjectType != "template" && req.ObjectType != "values" && req.ObjectType != "environment" {
-		writeError(w, http.StatusBadRequest, "object_type must be 'template', 'values', or 'environment'", "validation")
-		return
-	}
-	if req.ProposedPayload == "" {
-		writeError(w, http.StatusBadRequest, "proposed_payload is required", "validation")
-		return
-	}
-	if req.ObjectType == "template" && req.TemplateName == "" {
-		writeError(w, http.StatusBadRequest, "template_name is required for template changes", "validation")
-		return
-	}
-
-	// Resolve project.
-	var projectID int64
-	err := h.DB.QueryRowContext(r.Context(), `SELECT id FROM projects WHERE name = $1`, projectName).Scan(&projectID)
-	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "project not found", "not_found")
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
-		return
-	}
-
-	tx, err := h.DB.BeginTx(r.Context(), nil)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
-		return
-	}
-	defer tx.Rollback()
-
-	// Find or create the user's active PR for this project.
-	var pr models.PullRequest
-	err = tx.QueryRowContext(r.Context(), `
-		SELECT id, project_id, global_values_name, author_id, title, description, status,
-		       is_conflicted, created_at, updated_at, merged_at, closed_at
-		FROM pull_requests
-		WHERE project_id = $1 AND author_id = $2 AND status IN ('draft', 'open', 'approved')
-		ORDER BY created_at DESC LIMIT 1
-		FOR UPDATE
-	`, projectID, user.UserID).Scan(
-		&pr.ID, &pr.ProjectID, &pr.GlobalValuesName, &pr.AuthorID, &pr.Title, &pr.Description,
-		&pr.Status, &pr.IsConflicted, &pr.CreatedAt, &pr.UpdatedAt,
-		&pr.MergedAt, &pr.ClosedAt,
-	)
-	if err == sql.ErrNoRows {
-		// Create a new draft.
-		err = tx.QueryRowContext(r.Context(), `
-			INSERT INTO pull_requests (project_id, author_id, title, description, status)
-			VALUES ($1, $2, '', NULL, 'draft')
-			RETURNING id, project_id, global_values_name, author_id, title, description, status,
-			          is_conflicted, created_at, updated_at, merged_at, closed_at
-		`, projectID, user.UserID).Scan(
-			&pr.ID, &pr.ProjectID, &pr.GlobalValuesName, &pr.AuthorID, &pr.Title, &pr.Description,
-			&pr.Status, &pr.IsConflicted, &pr.CreatedAt, &pr.UpdatedAt,
-			&pr.MergedAt, &pr.ClosedAt,
-		)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to create draft", "internal")
-			return
-		}
-	} else if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
-		return
-	}
-
-	// If PR was approved, reset approvals and revert to open.
-	if pr.Status == "approved" {
-		_, err = tx.ExecContext(r.Context(), `
-			UPDATE pr_approvals SET withdrawn_at = NOW() WHERE pr_id = $1 AND withdrawn_at IS NULL
-		`, pr.ID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
-			return
-		}
-		_, err = tx.ExecContext(r.Context(), `
-			UPDATE pull_requests SET status = 'open', updated_at = NOW() WHERE id = $1
-		`, pr.ID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
-			return
-		}
-		pr.Status = "open"
-	}
-
-	// Determine the base version ID and upsert the change.
-	var baseVersionID int
-	switch req.ObjectType {
-	case "template":
-		err = tx.QueryRowContext(r.Context(), `
-			SELECT COALESCE(
-				(SELECT version_id FROM project_config_templates
-				 WHERE project_id = $1 AND template_name = $2
-				 ORDER BY version_id DESC LIMIT 1),
-			0)
-		`, projectID, req.TemplateName).Scan(&baseVersionID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
-			return
-		}
-		_, err = tx.ExecContext(r.Context(), `
-			DELETE FROM pr_changes WHERE pr_id = $1 AND object_type = 'template' AND template_name = $2
-		`, pr.ID, req.TemplateName)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
-			return
-		}
-		_, err = tx.ExecContext(r.Context(), `
-			INSERT INTO pr_changes (pr_id, object_type, project_id, template_name, base_version_id, proposed_payload)
-			VALUES ($1, 'template', $2, $3, $4, $5)
-		`, pr.ID, projectID, req.TemplateName, baseVersionID, req.ProposedPayload)
-
-	case "values":
-		if req.EnvironmentName == "" {
-			writeError(w, http.StatusBadRequest, "environment_name is required for values changes", "validation")
-			return
-		}
-		// Try to get base version if environment already exists in DB.
-		var envID int64
-		envErr := tx.QueryRowContext(r.Context(), `SELECT id FROM environments WHERE project_id = $1 AND name = $2`, projectID, req.EnvironmentName).Scan(&envID)
-		if envErr == nil {
-			_ = tx.QueryRowContext(r.Context(), `
-				SELECT COALESCE(
-					(SELECT version_id FROM project_config_values
-					 WHERE project_id = $1 AND environment_id = $2
-					 ORDER BY version_id DESC LIMIT 1),
-				0)
-			`, projectID, envID).Scan(&baseVersionID)
-		}
-		// baseVersionID stays 0 if env doesn't exist yet (staged in draft)
-		_, err = tx.ExecContext(r.Context(), `
-			DELETE FROM pr_changes WHERE pr_id = $1 AND object_type = 'values' AND environment_name = $2
-		`, pr.ID, req.EnvironmentName)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
-			return
-		}
-		_, err = tx.ExecContext(r.Context(), `
-			INSERT INTO pr_changes (pr_id, object_type, project_id, environment_name, base_version_id, proposed_payload)
-			VALUES ($1, 'values', $2, $3, $4, $5)
-		`, pr.ID, projectID, req.EnvironmentName, baseVersionID, req.ProposedPayload)
-
-	case "environment":
-		envName := req.EnvironmentName
-		if envName == "" {
-			// Parse from proposed_payload
-			var envReq models.CreateEnvironmentRequest
-			if jsonErr := json.Unmarshal([]byte(req.ProposedPayload), &envReq); jsonErr == nil {
-				envName = envReq.Name
-			}
-		}
-		if envName == "" {
-			writeError(w, http.StatusBadRequest, "environment name is required", "validation")
-			return
-		}
-		_, err = tx.ExecContext(r.Context(), `
-			DELETE FROM pr_changes WHERE pr_id = $1 AND object_type = 'environment' AND environment_name = $2
-		`, pr.ID, envName)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
-			return
-		}
-		_, err = tx.ExecContext(r.Context(), `
-			INSERT INTO pr_changes (pr_id, object_type, project_id, environment_name, base_version_id, proposed_payload)
-			VALUES ($1, 'environment', $2, $3, 0, $4)
-		`, pr.ID, projectID, envName, req.ProposedPayload)
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to stage change", "internal")
-		return
-	}
-
-	// Update PR timestamp.
-	_, err = tx.ExecContext(r.Context(), `UPDATE pull_requests SET updated_at = NOW() WHERE id = $1`, pr.ID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
-		return
-	}
-
-	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to commit", "internal")
-		return
-	}
-
-	// Reload the full PR with changes.
-	pr.Changes, _ = h.loadChanges(r.Context(), pr.ID)
-	writeJSON(w, http.StatusOK, pr)
-}
-
 // SubmitDraft transitions a draft PR to open with a title and description.
 func (h *PullRequestHandler) SubmitDraft(w http.ResponseWriter, r *http.Request) {
 	user := currentUser(r)
@@ -1098,7 +935,7 @@ func (h *PullRequestHandler) SubmitDraft(w http.ResponseWriter, r *http.Request)
 // loadChanges fetches all changes for a PR.
 func (h *PullRequestHandler) loadChanges(ctx context.Context, prID int64) ([]models.PRChange, error) {
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT id, pr_id, object_type, project_id, template_name,
+		SELECT id, pr_id, object_type, operation, project_id, template_name,
 		       environment_name, global_values_name, base_version_id,
 		       proposed_payload, created_at
 		FROM pr_changes WHERE pr_id = $1
@@ -1113,7 +950,7 @@ func (h *PullRequestHandler) loadChanges(ctx context.Context, prID int64) ([]mod
 	for rows.Next() {
 		var c models.PRChange
 		if err := rows.Scan(
-			&c.ID, &c.PRID, &c.ObjectType, &c.ProjectID, &c.TemplateName,
+			&c.ID, &c.PRID, &c.ObjectType, &c.Operation, &c.ProjectID, &c.TemplateName,
 			&c.EnvironmentName, &c.GlobalValuesName, &c.BaseVersionID,
 			&c.ProposedPayload, &c.CreatedAt,
 		); err != nil {

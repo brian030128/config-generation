@@ -64,11 +64,10 @@ var _ = Describe("Environments (project-scoped)", func() {
 		})
 	})
 
-	Context("staging environment creation via draft PR", func() {
+	Context("staging environment creation via the workspace", func() {
 		It("stages an environment change in the draft", func() {
-			rec := doRequest("POST", "/api/workspace/billing-service/stage", map[string]any{
-				"object_type":      "environment",
-				"proposed_payload": `{"name":"staging"}`,
+			rec := doRequest("POST", "/api/workspace/billing-service/environments", map[string]any{
+				"name": "staging",
 			}, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusOK))
 
@@ -77,6 +76,43 @@ var _ = Describe("Environments (project-scoped)", func() {
 			Expect(changes).To(HaveLen(1))
 			change := changes[0].(map[string]any)
 			Expect(change["object_type"]).To(Equal("environment"))
+			Expect(change["operation"]).To(Equal("create"))
+			Expect(change["environment_name"]).To(Equal("staging"))
+		})
+
+		It("does not affect the published environments list until merge", func() {
+			doRequest("POST", "/api/workspace/billing-service/environments", map[string]any{
+				"name": "staging",
+			}, aliceID, "alice")
+
+			rec := doRequest("GET", "/api/projects/billing-service/environments", nil, aliceID, "alice")
+			Expect(decode[map[string]any](rec)["count"]).To(BeEquivalentTo(0))
+
+			By("but the workspace overlay shows it")
+			rec = doRequest("GET", "/api/workspace/billing-service/environments", nil, aliceID, "alice")
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(decode[map[string]any](rec)["count"]).To(BeEquivalentTo(1))
+		})
+
+		It("creates the environment on merge", func() {
+			doRequest("POST", "/api/workspace/billing-service/environments", map[string]any{
+				"name": "staging",
+			}, aliceID, "alice")
+			submitApproveMerge(aliceID, "alice", "billing-service")
+
+			rec := doRequest("GET", "/api/projects/billing-service/environments", nil, aliceID, "alice")
+			Expect(decode[map[string]any](rec)["count"]).To(BeEquivalentTo(1))
+		})
+
+		It("deletes a published environment through the workspace", func() {
+			createEnvironment(aliceID, "alice", "billing-service", "staging")
+
+			rec := doRequest("DELETE", "/api/workspace/billing-service/environments/staging", nil, aliceID, "alice")
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			submitApproveMerge(aliceID, "alice", "billing-service")
+
+			rec = doRequest("GET", "/api/projects/billing-service/environments", nil, aliceID, "alice")
+			Expect(decode[map[string]any](rec)["count"]).To(BeEquivalentTo(0))
 		})
 	})
 })
