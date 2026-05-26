@@ -97,13 +97,24 @@ var _ = Describe("Project Members (read:project)", func() {
 			Expect(rec.Code).To(Equal(http.StatusForbidden))
 		})
 
-		It("lists the project's members", func() {
+		It("lists the project's members and reports viewer_can_manage for an admin", func() {
 			addProjectMember(aliceID, "alice", "billing", bobID)
 
 			rec := doRequest("GET", "/api/projects/billing/members", nil, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			body := decode[map[string]any](rec)
 			Expect(body["count"]).To(BeEquivalentTo(2)) // creator + bob
+			Expect(body["viewer_can_manage"]).To(BeTrue())
+		})
+
+		It("reports viewer_can_manage=false for a plain member who can still see the list", func() {
+			addProjectMember(aliceID, "alice", "billing", bobID)
+
+			rec := doRequest("GET", "/api/projects/billing/members", nil, bobID, "bob")
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			body := decode[map[string]any](rec)
+			Expect(body["count"]).To(BeEquivalentTo(2)) // bob can read the member list
+			Expect(body["viewer_can_manage"]).To(BeFalse())
 		})
 
 		It("returns 409 when the user is already a member", func() {

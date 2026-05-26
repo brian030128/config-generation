@@ -128,6 +128,26 @@ sole `project_admin:<p>` member is refused. Membership logic lives in
 | POST | `/api/projects/{p}/members` | `grant(p)` | Route MW: `grant(p)` | ✅ |
 | DELETE | `/api/projects/{p}/members/{userID}` | `grant(p)`; sole `project_admin` undeletable | Route MW: `grant(p)` + in-handler last-admin guard | ✅ |
 
+The `GET …/members` response also carries a `viewer_can_manage` boolean — whether the caller
+holds `grant(p)`, computed in-handler via `middleware.CheckPermission` (superusers included).
+The frontend uses it to show/hide the add/remove controls; it is advisory only, the
+`POST`/`DELETE` routes remain independently `grant`-gated.
+
+---
+
+## Users
+
+| Method | Path | Expected enforcement | Current implementation | Status |
+|---|---|---|---|---|
+| GET | `/api/users?search=` | Authenticated (directory search) | Authenticated — any logged-in user | ⚠️ (spec silent) |
+
+Returns up to 20 users (`id`, `username`, `display_name`, `created_at`) whose username or
+display name match the optional `search` query, case-insensitively; an empty query returns the
+first 20 by username. Sensitive columns (password hash, superuser flag) are never returned.
+This powers the project **member picker**. It is gated by authentication only — there is no
+per-user scope that fits a global directory search — so any authenticated user can enumerate
+the directory. Adding a member is still `grant(p)`-gated on the members endpoint above.
+
 ---
 
 ## Project Config Templates

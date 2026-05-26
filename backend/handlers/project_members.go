@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"net/http"
 
+	"github.com/brian/config-generation/backend/middleware"
 	"github.com/brian/config-generation/backend/models"
 	"github.com/go-chi/chi/v5"
 )
@@ -67,7 +68,22 @@ func (h *ProjectMemberHandler) ListMembers(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	writeJSON(w, http.StatusOK, models.ListResponse[models.ProjectMember]{Items: members, Count: len(members)})
+	// Whether the caller may manage members (add/remove) — i.e. holds grant(p).
+	// Same check the add/remove routes enforce; superusers pass via the bypass.
+	canManage, err := middleware.CheckPermission(r.Context(), h.DB, currentUser(r).UserID, models.PermissionRequirement{
+		Action:     models.ActionGrant,
+		KeyProject: projectName,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "permission check failed", "internal")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, models.ProjectMembersResponse{
+		Items:           members,
+		Count:           len(members),
+		ViewerCanManage: canManage,
+	})
 }
 
 // AddMember adds a user to the project, granting them read:project.

@@ -4,6 +4,7 @@ import type {
   Project,
   CreateProjectRequest,
   ProjectMember,
+  ProjectMembersResponse,
   AddProjectMemberRequest,
 } from "./types"
 
@@ -21,7 +22,7 @@ export const projectsApi = {
 
   listMembers: (name: string) =>
     client
-      .get<ListResponse<ProjectMember>>(`/projects/${name}/members`)
+      .get<ProjectMembersResponse>(`/projects/${name}/members`)
       .then((r) => r.data),
 
   addMember: (name: string, userId: number) =>

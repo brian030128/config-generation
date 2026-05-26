@@ -21,15 +21,22 @@ export function MemberList({ projectName }: { projectName: string }) {
   const { data, isLoading, error } = useProjectMembers(projectName)
   const { user } = useAuth()
   const members = data?.items ?? []
+  const canManage = data?.viewer_can_manage ?? false
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-medium">Members</h3>
-        <AddMemberDialog
-          projectName={projectName}
-          existingMemberIds={members.map((m) => m.user_id)}
-        />
+        {canManage ? (
+          <AddMemberDialog
+            projectName={projectName}
+            existingMemberIds={members.map((m) => m.user_id)}
+          />
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Only project admins can add or remove members.
+          </p>
+        )}
       </div>
 
       {isLoading && (
@@ -79,7 +86,9 @@ export function MemberList({ projectName }: { projectName: string }) {
               <span className="text-xs text-muted-foreground">
                 added {formatRelativeTime(member.added_at)}
               </span>
-              <RemoveMemberButton projectName={projectName} member={member} />
+              {canManage && (
+                <RemoveMemberButton projectName={projectName} member={member} />
+              )}
             </div>
           </div>
         ))}

@@ -45,6 +45,13 @@ export interface ProjectMember {
   added_at: string
 }
 
+export interface ProjectMembersResponse {
+  items: ProjectMember[]
+  count: number
+  // Whether the current user holds grant(p) and may add/remove members.
+  viewer_can_manage: boolean
+}
+
 export interface ProjectConfigTemplate {
   id: number
   project_id: number

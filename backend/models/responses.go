@@ -7,6 +7,15 @@ type ListResponse[T any] struct {
 	Count int `json:"count"`
 }
 
+// ProjectMembersResponse is the project members list plus whether the caller
+// holds grant(p) — i.e. may add/remove members. The frontend uses
+// ViewerCanManage to show or hide the member-management controls.
+type ProjectMembersResponse struct {
+	Items           []ProjectMember `json:"items"`
+	Count           int             `json:"count"`
+	ViewerCanManage bool            `json:"viewer_can_manage"`
+}
+
 type ErrorResponse struct {
 	Error   string `json:"error"`
 	Code    string `json:"code,omitempty"`
