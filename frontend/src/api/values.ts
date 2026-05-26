@@ -1,32 +1,13 @@
 import { client } from "./client"
-import type {
-  ProjectConfigValues,
-  CreateProjectConfigValuesRequest,
-  AppendProjectConfigValuesVersionRequest,
-} from "./types"
+import type { ProjectConfigValues } from "./types"
 
+// Reads of published values. Creating/editing/deleting values goes through the
+// workspace API (see pull-requests.ts).
 export const valuesApi = {
-  create: (projectName: string, req: CreateProjectConfigValuesRequest) =>
-    client
-      .post<ProjectConfigValues>(`/projects/${projectName}/values`, req)
-      .then((r) => r.data),
-
   getLatest: (projectName: string, envName: string) =>
     client
       .get<ProjectConfigValues>(
         `/projects/${projectName}/envs/${envName}/values`,
-      )
-      .then((r) => r.data),
-
-  appendVersion: (
-    projectName: string,
-    envName: string,
-    req: AppendProjectConfigValuesVersionRequest,
-  ) =>
-    client
-      .post<ProjectConfigValues>(
-        `/projects/${projectName}/envs/${envName}/values/versions`,
-        req,
       )
       .then((r) => r.data),
 

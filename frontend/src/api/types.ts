@@ -110,12 +110,6 @@ export interface AppendTemplateVersionRequest {
   commit_message?: string
 }
 
-export interface CreateProjectConfigValuesRequest {
-  environment_id: number
-  payload: Record<string, unknown>
-  commit_message?: string
-}
-
 export interface AppendProjectConfigValuesVersionRequest {
   payload: Record<string, unknown>
   commit_message?: string
@@ -164,6 +158,7 @@ export interface PRChange {
   id: number
   pr_id: number
   object_type: "template" | "values" | "global_values" | "environment"
+  operation: "create" | "update" | "delete"
   project_id: number | null
   template_name: string | null
   environment_name: string | null

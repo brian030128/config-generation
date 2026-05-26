@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 import { useProjectVariables } from "@/hooks/use-templates"
 import { useValues } from "@/hooks/use-values"
-import { useStageChange, useActiveDraft } from "@/hooks/use-pull-requests"
+import { useStageValues, useActiveDraft } from "@/hooks/use-pull-requests"
 import type { TemplateVariable } from "@/api/types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -22,7 +22,7 @@ export default function WorkspaceEnvPage() {
   }>()
   const navigate = useNavigate()
   const { data: draft } = useActiveDraft(projectName!)
-  const stageChange = useStageChange(projectName!)
+  const stageValues = useStageValues(projectName!)
 
   const { data: values } = useValues(projectName!, envName!)
 
@@ -110,11 +110,10 @@ export default function WorkspaceEnvPage() {
   }
 
   function handleSave() {
-    stageChange.mutate(
+    stageValues.mutate(
       {
-        object_type: "values",
-        environment_name: envName,
-        proposed_payload: JSON.stringify(payload),
+        envName: envName!,
+        payload,
       },
       {
         onSuccess: () => {
@@ -236,10 +235,10 @@ export default function WorkspaceEnvPage() {
           <div className="flex justify-end">
             <Button
               onClick={handleSave}
-              disabled={!canSave || stageChange.isPending}
+              disabled={!canSave || stageValues.isPending}
               size="sm"
             >
-              {stageChange.isPending ? "Saving..." : "Save to Draft"}
+              {stageValues.isPending ? "Saving..." : "Save to Draft"}
             </Button>
           </div>
         </div>

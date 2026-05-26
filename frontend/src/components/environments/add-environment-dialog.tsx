@@ -12,7 +12,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Plus } from "lucide-react"
-import { useStageChange } from "@/hooks/use-pull-requests"
+import { useStageEnvironment } from "@/hooks/use-pull-requests"
 
 export function AddEnvironmentDialog({
   projectName,
@@ -22,17 +22,14 @@ export function AddEnvironmentDialog({
   const [open, setOpen] = useState(false)
   const [envName, setEnvName] = useState("")
   const navigate = useNavigate()
-  const stageChange = useStageChange(projectName)
+  const stageEnvironment = useStageEnvironment(projectName)
 
   const trimmed = envName.trim()
 
   function handleCreate() {
     if (!trimmed) return
-    stageChange.mutate(
-      {
-        object_type: "environment",
-        proposed_payload: JSON.stringify({ name: trimmed }),
-      },
+    stageEnvironment.mutate(
+      { name: trimmed },
       {
         onSuccess: () => {
           setOpen(false)
@@ -76,8 +73,8 @@ export function AddEnvironmentDialog({
             <Button variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleCreate} disabled={!trimmed || stageChange.isPending}>
-              {stageChange.isPending ? "Creating..." : "Create Environment"}
+            <Button onClick={handleCreate} disabled={!trimmed || stageEnvironment.isPending}>
+              {stageEnvironment.isPending ? "Creating..." : "Create Environment"}
             </Button>
           </div>
         </div>

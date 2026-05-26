@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { toast } from "sonner"
-import { useStageChange } from "@/hooks/use-pull-requests"
+import { useStageTemplate } from "@/hooks/use-pull-requests"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -22,7 +22,7 @@ export function CreateTemplateDialog({
   const [open, setOpen] = useState(false)
   const [name, setName] = useState("")
   const [body, setBody] = useState("")
-  const stageChange = useStageChange(projectName)
+  const stageTemplate = useStageTemplate(projectName)
 
   function reset() {
     setName("")
@@ -32,11 +32,11 @@ export function CreateTemplateDialog({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim() || !body.trim()) return
-    stageChange.mutate(
+    stageTemplate.mutate(
       {
-        object_type: "template",
-        template_name: name.trim(),
-        proposed_payload: body,
+        templateName: name.trim(),
+        body,
+        isNew: true,
       },
       {
         onSuccess: () => {
@@ -92,8 +92,8 @@ export function CreateTemplateDialog({
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={stageChange.isPending}>
-              {stageChange.isPending ? "Creating..." : "Create"}
+            <Button type="submit" disabled={stageTemplate.isPending}>
+              {stageTemplate.isPending ? "Creating..." : "Create"}
             </Button>
           </div>
         </form>

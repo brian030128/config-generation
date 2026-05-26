@@ -1,9 +1,5 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { templatesApi } from "@/api/templates"
-import type {
-  CreateTemplateRequest,
-  AppendTemplateVersionRequest,
-} from "@/api/types"
 import { projectKeys } from "./use-projects"
 
 export const templateKeys = {
@@ -55,36 +51,3 @@ export function useTemplateVersions(
   })
 }
 
-export function useCreateTemplate(projectName: string) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (req: CreateTemplateRequest) =>
-      templatesApi.create(projectName, req),
-    onSuccess: () =>
-      qc.invalidateQueries({
-        queryKey: templateKeys.forProject(projectName),
-      }),
-  })
-}
-
-export function useAppendTemplateVersion(
-  projectName: string,
-  templateName: string,
-) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (req: AppendTemplateVersionRequest) =>
-      templatesApi.appendVersion(projectName, templateName, req),
-    onSuccess: () => {
-      qc.invalidateQueries({
-        queryKey: templateKeys.forProject(projectName),
-      })
-      qc.invalidateQueries({
-        queryKey: templateKeys.versions(projectName, templateName),
-      })
-      qc.invalidateQueries({
-        queryKey: templateKeys.detail(projectName, templateName),
-      })
-    },
-  })
-}
