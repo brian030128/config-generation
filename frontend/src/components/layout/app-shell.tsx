@@ -23,7 +23,7 @@ export function AppShell() {
     <div className="flex h-screen">
       <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex h-14 items-center border-b px-6">
+        <header className="flex h-18 items-center border-b px-6">
           <Breadcrumbs />
         </header>
         <main className="flex-1 overflow-auto p-6">
