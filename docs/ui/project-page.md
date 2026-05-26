@@ -44,11 +44,9 @@ Lists all config templates owned by this project.
 - **Edit in Workspace** button — navigates to the Workspace for this project
 
 ### "+ New Template" Button
-Visible to users with `write:project_templates(project)`.
-Opens a dialog:
-- **Template name** — text input (required, unique within project)
-- **Body** — code editor (the Go template text)
-- **Commit message** — text input (optional)
+Visible to users with `write:project_templates(project)`. Because the project page is read-only,
+this navigates to the **Workspace** for the project, where the new template is staged into the
+caller's draft PR (`POST /api/workspace/{p}/templates`). It is not created directly.
 
 ### Template Viewer
 Clicking a template opens it in a read-only code viewer showing the current live version.
@@ -59,7 +57,7 @@ Clicking a template opens it in a read-only code viewer showing the current live
 To edit, use the Workspace.
 
 ### Delete Template
-Available via a menu on each template row. Requires `write:project_templates(project)`. Confirmation dialog warns that all versions and associated values will be affected.
+Available via a menu on each template row. Requires `delete:project_templates(project)`. Like every other mutation, deletion is **staged in the Workspace** (`DELETE /api/workspace/{p}/templates/{t}`) and only takes effect when the PR is merged. Confirmation dialog warns that all versions and associated values will be affected.
 
 ---
 
@@ -88,13 +86,14 @@ Lists all environments that have value sets defined for this project.
 Clicking a row navigates to the **project-env-page** for that `(project, environment)`.
 
 ### "+ Add Environment" Button
-Visible to users with `create:env_values(project)`.
-Opens a dialog:
-- **Environment** — dropdown of all global environments
-- Once selected, the user is navigated to the **project-env-page** to fill in values for each template (values are required — no empty values allowed).
+Visible to users with `create:env_values(project)`. Navigates to the **Workspace**, where the
+new environment is staged (`POST /api/workspace/{p}/environments`) and the user fills in values
+for each template (staged as value changes). Nothing is created directly; it all merges together.
 
 ### Delete Environment
-Available via a menu on each row. Requires `delete:project_values(project, env)`. Removes all value sets for this `(project, environment)` pair. Confirmation dialog required.
+Available via a menu on each row. Requires `delete:project_values(project, *)`. Staged in the
+Workspace (`DELETE /api/workspace/{p}/environments/{e}`) and applied at merge — removes the
+environment and all its value sets. Confirmation dialog required.
 
 ---
 

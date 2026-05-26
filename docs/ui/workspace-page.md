@@ -86,19 +86,26 @@ The editing interface for a specific project within the workspace. Structured si
 
 ## 1. Templates Tab
 
-Same layout as the project page Templates tab, but:
+Same layout as the project page Templates tab, but every action stages a change rather than
+applying it directly. The list is the **overlay view** (`GET /api/workspace/{p}/templates`):
+the published base plus this user's staged changes.
 
-- **Edit** opens the template editor in workspace mode. Saves stage the change in the draft PR (not directly to the latest version).
-- Templates with pending changes in the PR show a **"modified"** badge.
+- **+ New Template** stages a create (`POST /api/workspace/{p}/templates`); the new template appears in the list with a **"new"** badge.
+- **Edit** opens the template editor in workspace mode. Saving stages the change (`PUT /api/workspace/{p}/templates/{t}`), not directly to the latest version.
+- **Delete** (row menu) stages a deletion (`DELETE /api/workspace/{p}/templates/{t}`); the template shows a **"deleted"** badge and is struck through until merge.
+- Templates with a staged edit show a **"modified"** badge.
 - The editor shows the **draft snapshot** if one exists for this template; otherwise, it loads the current live version as a starting point.
 
 ---
 
 ## 2. Environments Tab
 
-Same layout as the project page Environments tab, but:
+Same layout as the project page Environments tab, overlaid with staged changes
+(`GET /api/workspace/{p}/environments`):
 
+- **+ Add Environment** stages an environment create (`POST /api/workspace/{p}/environments`); it appears with a **"new"** badge.
 - Clicking an environment navigates to the **workspace environment page** (`/workspace/:projectName/env/:envName`).
+- **Delete** (row menu) stages an environment delete (`DELETE /api/workspace/{p}/environments/{e}`), shown struck through with a **"deleted"** badge until merge.
 - Environments with pending value changes show a **"modified"** badge.
 
 ---
@@ -109,8 +116,9 @@ Same layout as the project page Environments tab, but:
 
 Same layout as the project-env-page, but:
 
-- The values shown are the **draft snapshot** from the PR if one exists for this `(template, environment)` pair; otherwise, the current live values are loaded as a starting point.
-- **Save** stages the change in the draft PR. If the PR is `approved`, saving resets all approvals and returns it to `open`.
+- The values shown are the **draft snapshot** (overlay, `GET /api/workspace/{p}/envs/{e}/values`) if one exists for this `(template, environment)` pair; otherwise, the current live values are loaded as a starting point.
+- **Save** stages the change (`PUT /api/workspace/{p}/envs/{e}/values`). If the PR is `approved`, saving resets all approvals and returns it to `open`.
+- **Delete values** stages removal of this env's value set (`DELETE /api/workspace/{p}/envs/{e}/values`).
 - No deployment section — deployments operate on the live version, not the draft.
 
 ---
@@ -127,18 +135,23 @@ On submit, the PR transitions from `draft` to `open` and becomes visible to revi
 
 ## 5. Change Summary
 
-A collapsible panel (or a dedicated tab) showing all changes accumulated in the PR:
+A collapsible panel (or a dedicated tab) showing all changes accumulated in the PR
+(`GET /api/workspace/{p}/changes`). Each row labels its **operation**:
 
 ```
 ┌───────────────────────────────────────────────────────────────┐
-│  Changes (3)                                                  │
+│  Changes (4)                                                  │
 │                                                               │
-│  Template: app.yaml                              v8 → draft   │
-│  Template: nginx.conf                            v12 → draft  │
-│  Values: app.yaml / staging                      v13 → draft  │
+│  edit    Template: app.yaml                      v8 → draft   │
+│  delete  Template: legacy.conf                   v3 → ✕       │
+│  create  Environment: eu-prod                    —            │
+│  edit    Values: app.yaml / staging              v13 → draft  │
 │                                                               │
-│  Click a change to view the diff or edit.                     │
+│  Click a change to view the diff/edit, or remove it (×) to     │
+│  unstage and revert that object to the published base.         │
 └───────────────────────────────────────────────────────────────┘
 ```
 
 Each change is clickable — navigates to the relevant editor with the draft snapshot loaded.
+Removing a change calls `DELETE /api/workspace/{p}/changes/{changeID}`; discarding the whole
+workspace (§3) calls `DELETE /api/workspace/{p}`.

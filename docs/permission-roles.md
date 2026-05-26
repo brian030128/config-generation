@@ -23,6 +23,14 @@ A permission is a triple of `(action, resource, key)`, written as `action:resour
 
 Since Project Config Templates, Project Config Values, and Global Values are versioned (full-copy snapshots per the deployment spec), write permissions authorize appending new versions. Reads authorize inspecting any historical version. Deletes operate on the logical object and its entire version history.
 
+For **project** objects, these permissions are enforced when a change is **staged into a
+workspace** (the author's active draft PR — see [`pr-flow.md`](./pr-flow.md) §4.1), which is the
+only write path. Staging a template/value change requires the corresponding `write`/`create`;
+staging a delete requires the corresponding `delete`. The **merge** is what actually appends the
+version (or removes the object); it is gated separately by PR authorship and the project's
+approval condition, and does **not** re-check these atoms. (Global Values remain on their
+existing direct-append + per-entry-PR flow.)
+
 ---
 
 ## 3. Permission Atoms
@@ -43,9 +51,10 @@ Since Project Config Templates, Project Config Values, and Global Values are ver
 | Permission | Key | Meaning |
 |---|---|---|
 | `create:project` | — | Create a new project. System-level; no scope key. |
-| `create:env_values(project)` | project | Create a new value set for any `(template, env)` pair in the project. Payload-bearing: the caller supplies the initial value JSON, which becomes v1 of the record. Fails if a record for that `(template, env)` already exists. **Implies `write:project_values(project, *)`** (and therefore read). |
+| `create:env_values(project)` | project | Create a new value set for any `(template, env)` pair in the project. Payload-bearing: the caller supplies the initial value JSON, which becomes v1 of the record. Fails if a record for that `(template, env)` already exists. Also authorizes **staging the creation of a new environment** (which exists precisely to hold value sets). **Implies `write:project_values(project, *)`** (and therefore read). |
+| `delete:project_templates(project)` | project | Delete a template owned by the project, including its entire version history. Symmetric with `write:project_templates` (which covers create + append). |
 | `delete:project(project)` | project | Delete the project. Scope of cascade (templates, values, deployments) is out of scope for this spec. |
-| `delete:project_values(project, env)` | project, env | Delete the value set(s) for the given `(project, env)`. |
+| `delete:project_values(project, env)` | project, env | Delete the value set(s) for the given `(project, env)`. The wildcard form `delete:project_values(project, *)` additionally authorizes **deleting an environment** (which cascades to all its value sets). |
 
 ### 3.3 Administration
 
@@ -77,9 +86,10 @@ When a project is created, the system automatically creates a **project admin** 
 
 Contains the following permissions:
 
-- `write:project_templates(P)` — full authoring on all templates in the project.
+- `write:project_templates(P)` — full authoring on all templates in the project (create + append versions).
+- `delete:project_templates(P)` — delete any template in the project.
 - `create:env_values(P)` — bootstrap new envs and (by implication) modify any existing env values in the project.
-- `delete:project_values(P, *)` — tear down any env's values in the project.
+- `delete:project_values(P, *)` — tear down any env's values in the project, and delete environments themselves.
 - `delete:project(P)` — delete the project itself.
 - `grant(P)` — manage roles and assignments within the project.
 - *(Deploy permission — TBD, see §6.)*
@@ -146,5 +156,5 @@ The following are explicitly unresolved and need decisions before the model is c
    - Can a grantor grant any project-scoped permission, or only permissions they themselves hold?
    - Can a project admin revoke the original project creator's admin role (risking lockout), or is the creator's role protected?
 
-5. **`create:template(project)` split.** Currently `write:project_templates(project)` covers both creating new templates and appending versions to existing ones. Whether to split out a create-only permission (symmetric with `create:env_values`) is open. Default assumption: keep merged unless a concrete use case demands the split.
+5. **`create:template(project)` split.** ~~Open.~~ **Resolved (partially):** `write:project_templates(project)` continues to cover both creating new templates and appending versions — no separate create-only atom. However, since template **deletion** now flows through the workspace/PR like any other change, a dedicated `delete:project_templates(project)` atom is introduced (see §3.2), symmetric with `delete:project_values`. A create-only split remains unadopted absent a concrete use case.
 
