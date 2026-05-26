@@ -30,6 +30,14 @@ export interface Environment {
   created_at: string
 }
 
+export interface ProjectMember {
+  user_id: number
+  username: string
+  display_name: string | null
+  added_by: number
+  added_at: string
+}
+
 export interface ProjectConfigTemplate {
   id: number
   project_id: number
@@ -97,6 +105,10 @@ export interface CreateProjectRequest {
   name: string
   description?: string
   approval_condition?: string
+}
+
+export interface AddProjectMemberRequest {
+  user_id: number
 }
 
 export interface CreateTemplateRequest {
