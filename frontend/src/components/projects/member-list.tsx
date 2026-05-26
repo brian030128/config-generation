@@ -26,7 +26,10 @@ export function MemberList({ projectName }: { projectName: string }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-medium">Members</h3>
-        <AddMemberDialog projectName={projectName} />
+        <AddMemberDialog
+          projectName={projectName}
+          existingMemberIds={members.map((m) => m.user_id)}
+        />
       </div>
 
       {isLoading && (

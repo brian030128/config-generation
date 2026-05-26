@@ -11,6 +11,13 @@ export interface ErrorResponse {
 }
 
 // Domain models
+export interface User {
+  id: number
+  username: string
+  display_name: string | null
+  created_at: string
+}
+
 export interface Project {
   id: number
   name: string
