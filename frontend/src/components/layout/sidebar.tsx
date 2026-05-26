@@ -45,7 +45,7 @@ export function Sidebar() {
     >
       <div
         className={cn(
-          "relative flex h-14 items-center gap-2 px-4",
+          "relative flex h-18 items-center gap-2 border-b px-4",
           collapsed && "justify-center px-2",
         )}
       >
@@ -73,7 +73,6 @@ export function Sidebar() {
           </Button>
         )}
       </div>
-      <Separator />
       <nav className={cn("flex-1 space-y-1 p-2", collapsed && "px-2")}>
         {navItems.map((item) => (
           <NavLink
