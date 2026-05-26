@@ -1,0 +1,206 @@
+package handlers
+
+import (
+	"database/sql"
+	"net/http"
+
+	"github.com/brian/config-generation/backend/models"
+	"github.com/go-chi/chi/v5"
+)
+
+// ProjectMemberHandler manages a project's membership. Membership is the source
+// of read:project(name); the project admin (grant holder) adds and removes
+// members. Managing members is gated in router.go (read:project to list,
+// grant(p) to add/remove).
+type ProjectMemberHandler struct {
+	DB *sql.DB
+}
+
+// resolveProjectID looks up a project's ID by name, writing a 404 and returning
+// ok=false if it does not exist.
+func (h *ProjectMemberHandler) resolveProjectID(w http.ResponseWriter, r *http.Request, name string) (int64, bool) {
+	var id int64
+	err := h.DB.QueryRowContext(r.Context(), `SELECT id FROM projects WHERE name = $1`, name).Scan(&id)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		return 0, false
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return 0, false
+	}
+	return id, true
+}
+
+// ListMembers returns every member of the project.
+func (h *ProjectMemberHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
+	projectName := chi.URLParam(r, "projectName")
+	projectID, ok := h.resolveProjectID(w, r, projectName)
+	if !ok {
+		return
+	}
+
+	rows, err := h.DB.QueryContext(r.Context(), `
+		SELECT pm.user_id, u.username, u.display_name, pm.added_by, pm.added_at
+		FROM project_members pm
+		JOIN users u ON u.id = pm.user_id
+		WHERE pm.project_id = $1
+		ORDER BY pm.added_at
+	`, projectID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+	defer rows.Close()
+
+	members := []models.ProjectMember{}
+	for rows.Next() {
+		var m models.ProjectMember
+		if err := rows.Scan(&m.UserID, &m.Username, &m.DisplayName, &m.AddedBy, &m.AddedAt); err != nil {
+			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			return
+		}
+		members = append(members, m)
+	}
+	if err := rows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, models.ListResponse[models.ProjectMember]{Items: members, Count: len(members)})
+}
+
+// AddMember adds a user to the project, granting them read:project.
+func (h *ProjectMemberHandler) AddMember(w http.ResponseWriter, r *http.Request) {
+	projectName := chi.URLParam(r, "projectName")
+	projectID, ok := h.resolveProjectID(w, r, projectName)
+	if !ok {
+		return
+	}
+
+	var req models.AddProjectMemberRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body", "bad_request")
+		return
+	}
+	if req.UserID == 0 {
+		writeError(w, http.StatusBadRequest, "user_id is required", "validation")
+		return
+	}
+
+	// Verify the target user exists for a clean error (the FK would otherwise
+	// surface as a generic 500).
+	var exists bool
+	if err := h.DB.QueryRowContext(r.Context(),
+		`SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)`, req.UserID).Scan(&exists); err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+	if !exists {
+		writeError(w, http.StatusNotFound, "user not found", "not_found")
+		return
+	}
+
+	actor := currentUser(r)
+	var m models.ProjectMember
+	err := h.DB.QueryRowContext(r.Context(), `
+		WITH inserted AS (
+			INSERT INTO project_members (project_id, user_id, added_by) VALUES ($1, $2, $3)
+			RETURNING user_id, added_by, added_at
+		)
+		SELECT i.user_id, u.username, u.display_name, i.added_by, i.added_at
+		FROM inserted i JOIN users u ON u.id = i.user_id
+	`, projectID, req.UserID, actor.UserID).Scan(&m.UserID, &m.Username, &m.DisplayName, &m.AddedBy, &m.AddedAt)
+	if err != nil {
+		if isUniqueViolation(err) {
+			writeError(w, http.StatusConflict, "user is already a member of this project", "conflict")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to add member", "internal")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, m)
+}
+
+// RemoveMember removes a user from the project. It also revokes the user's
+// project-scoped role assignments so no permissions remain without membership.
+// Removing the sole member of the project_admin role is refused to avoid
+// locking the project out of administration.
+func (h *ProjectMemberHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
+	projectName := chi.URLParam(r, "projectName")
+	projectID, ok := h.resolveProjectID(w, r, projectName)
+	if !ok {
+		return
+	}
+
+	targetUserID, err := urlParamInt64(r, "userID")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid user ID", "bad_request")
+		return
+	}
+
+	// Guard: refuse to remove a user who is the sole member of the project's
+	// auto-created admin role (would leave the project with no admin).
+	var adminRoleID int64
+	err = h.DB.QueryRowContext(r.Context(),
+		`SELECT id FROM roles WHERE project_id = $1 AND is_auto_created = true LIMIT 1`,
+		projectID).Scan(&adminRoleID)
+	if err != nil && err != sql.ErrNoRows {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+	if err == nil {
+		var isAdmin bool
+		var adminCount int
+		if err := h.DB.QueryRowContext(r.Context(), `
+			SELECT
+				EXISTS(SELECT 1 FROM user_roles WHERE role_id = $1 AND user_id = $2),
+				(SELECT COUNT(*) FROM user_roles WHERE role_id = $1)
+		`, adminRoleID, targetUserID).Scan(&isAdmin, &adminCount); err != nil {
+			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			return
+		}
+		if isAdmin && adminCount <= 1 {
+			writeError(w, http.StatusBadRequest, "cannot remove the last project admin", "validation")
+			return
+		}
+	}
+
+	tx, err := h.DB.BeginTx(r.Context(), nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+	defer tx.Rollback()
+
+	// Revoke the user's project-scoped role assignments.
+	_, err = tx.ExecContext(r.Context(), `
+		DELETE FROM user_roles
+		WHERE user_id = $1 AND role_id IN (SELECT id FROM roles WHERE project_id = $2)
+	`, targetUserID, projectID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+
+	result, err := tx.ExecContext(r.Context(),
+		`DELETE FROM project_members WHERE project_id = $1 AND user_id = $2`,
+		projectID, targetUserID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		writeError(w, http.StatusNotFound, "user is not a member of this project", "not_found")
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to commit", "internal")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}

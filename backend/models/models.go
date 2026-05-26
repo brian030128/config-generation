@@ -31,6 +31,16 @@ type Project struct {
 	UpdatedAt         time.Time `json:"updated_at"`
 }
 
+// ProjectMember is a user's membership in a project. Membership grants
+// read:project(name) and nothing more.
+type ProjectMember struct {
+	UserID      int64     `json:"user_id"`
+	Username    string    `json:"username"`
+	DisplayName *string   `json:"display_name"`
+	AddedBy     int64     `json:"added_by"`
+	AddedAt     time.Time `json:"added_at"`
+}
+
 type ProjectConfigTemplate struct {
 	ID            int64     `json:"id"`
 	ProjectID     int64     `json:"project_id"`

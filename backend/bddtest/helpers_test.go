@@ -35,6 +35,28 @@ func seedUser(username, displayName string) int64 {
 	return id
 }
 
+// seedSuperuser seeds a user with the superuser flag set. Superusers bypass all
+// route-middleware and CheckPermission checks (including read:project).
+func seedSuperuser(username, displayName string) int64 {
+	var id int64
+	err := testDB.QueryRowContext(context.Background(),
+		`INSERT INTO users (username, display_name, superuser) VALUES ($1, $2, true) RETURNING id`,
+		username, displayName,
+	).Scan(&id)
+	Expect(err).NotTo(HaveOccurred())
+	return id
+}
+
+// addProjectMember adds targetUserID to the project via the members endpoint,
+// acting as the given admin (who must hold grant on the project).
+func addProjectMember(adminID int64, adminUsername, projectName string, targetUserID int64) {
+	GinkgoHelper()
+	rec := doRequest("POST", "/api/projects/"+projectName+"/members", map[string]any{
+		"user_id": targetUserID,
+	}, adminID, adminUsername)
+	Expect(rec.Code).To(Equal(http.StatusCreated))
+}
+
 func seedSystemRole(userID int64) {
 	var roleID int64
 	err := testDB.QueryRowContext(context.Background(),
@@ -106,7 +128,7 @@ func truncateAll() {
 	_, err := testDB.ExecContext(context.Background(), `
 		TRUNCATE users, environments, projects, project_config_templates,
 		         project_config_values, global_values, roles, role_permissions,
-		         user_roles, deployments, deployment_entries,
+		         user_roles, project_members, deployments, deployment_entries,
 		         deployment_entry_global_refs, pull_requests, pr_changes,
 		         pr_approvals CASCADE
 	`)

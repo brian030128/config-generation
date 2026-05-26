@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"net/http"
 
+	"github.com/brian/config-generation/backend/middleware"
 	"github.com/brian/config-generation/backend/models"
 	"github.com/go-chi/chi/v5"
 )
@@ -95,6 +96,16 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 5. Add the creator as a project member (grants read:project). The creator
+	// is both admin and member.
+	_, err = tx.ExecContext(r.Context(), `
+		INSERT INTO project_members (project_id, user_id, added_by) VALUES ($1, $2, $2)
+	`, project.ID, user.UserID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to add creator as member", "internal")
+		return
+	}
+
 	if err := tx.Commit(); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to commit", "internal")
 		return
@@ -128,6 +139,26 @@ func (h *ProjectHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ProjectHandler) List(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r)
+
+	// Scope the list to projects the caller can read: superusers see all,
+	// everyone else sees only projects they hold read:project on (i.e. are a
+	// member of, or hold a wildcard read:project).
+	su, err := middleware.IsSuperuser(r.Context(), h.DB, user.UserID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to check user", "internal")
+		return
+	}
+
+	var perms middleware.EffectivePermissionSet
+	if !su {
+		perms, err = middleware.LoadEffectivePermissions(r.Context(), h.DB, user.UserID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load permissions", "internal")
+			return
+		}
+	}
+
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT id, name, description, approval_condition, created_by, created_at, updated_at
 		FROM projects ORDER BY updated_at DESC
@@ -138,12 +169,19 @@ func (h *ProjectHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	var projects []models.Project
+	projects := []models.Project{}
 	for rows.Next() {
 		var p models.Project
 		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.ApprovalCondition, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			writeError(w, http.StatusInternalServerError, "database error", "internal")
 			return
+		}
+		if !su && !perms.Can(models.PermissionRequirement{
+			Action:     models.ActionRead,
+			Resource:   models.ResourceProject,
+			KeyProject: p.Name,
+		}) {
+			continue
 		}
 		projects = append(projects, p)
 	}
@@ -152,9 +190,6 @@ func (h *ProjectHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if projects == nil {
-		projects = []models.Project{}
-	}
 	writeJSON(w, http.StatusOK, models.ListResponse[models.Project]{Items: projects, Count: len(projects)})
 }
 
@@ -182,6 +217,7 @@ func (h *ProjectHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	// Delete dependent rows in order to satisfy FK constraints.
 	cascadeQueries := []string{
+		`DELETE FROM project_members WHERE project_id = $1`,
 		`DELETE FROM user_roles WHERE role_id IN (SELECT id FROM roles WHERE project_id = $1)`,
 		`DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE project_id = $1)`,
 		`DELETE FROM roles WHERE project_id = $1`,

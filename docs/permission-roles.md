@@ -39,6 +39,7 @@ existing direct-append + per-entry-PR flow.)
 
 | Permission | Key | Meaning |
 |---|---|---|
+| `read:project(project)` | project | Read the project's own metadata (name, description, approval condition) and see it listed. Granted **only** by project membership (see §4.3) — it is **not** implied by, and does **not** imply, any other project-scoped permission. In particular it does *not* grant read on templates, environments, or values. |
 | `read:project_templates(project)` | project | Read any template owned by the project, at any version. |
 | `write:project_templates(project)` | project | Append new versions of any template owned by the project. Includes creating new templates in the project. Implies read. |
 | `read:project_values(project, env)` | project, env | Read the value set for any template in the project at the given env, at any version. |
@@ -91,10 +92,10 @@ Contains the following permissions:
 - `create:env_values(P)` — bootstrap new envs and (by implication) modify any existing env values in the project.
 - `delete:project_values(P, *)` — tear down any env's values in the project, and delete environments themselves.
 - `delete:project(P)` — delete the project itself.
-- `grant(P)` — manage roles and assignments within the project.
+- `grant(P)` — manage roles and assignments within the project, **and add/remove project members** (see §4.3).
 - *(Deploy permission — TBD, see §6.)*
 
-Note: `write:project_values(P, *)` is not listed separately because it is implied by `create:env_values(P)`.
+Note: `write:project_values(P, *)` is not listed separately because it is implied by `create:env_values(P)`. The creator is also automatically added as a **member** of the project (see §4.3), which is what gives them `read:project(P)`.
 
 #### `gv_group_admin:<N>`
 
@@ -119,6 +120,27 @@ The following are example role shapes the model supports. They are not auto-crea
 - **Project read-only auditor** (e.g. `billing_auditor`):
   `read:project_templates(billing)` + `read:project_values(billing, *)`.
   Can inspect all templates and value sets (at any version) for billing. Cannot modify anything.
+
+### 4.3 Project Membership
+
+A project has a set of **members**. Membership is a first-class relationship (the
+`project_members` table), distinct from roles:
+
+- Being a member grants exactly one thing: `read:project(P)` — the member can read the
+  project's metadata and see it in their project list. Membership grants **nothing** on the
+  project's templates, environments, or values; those remain gated by their own atoms.
+- `read:project(P)` is **synthesized from membership** at permission-load time; it is never
+  stored as a `role_permissions` row and is not implied by any other permission. Equivalently:
+  to read a project you must be a member of it (or a superuser).
+- The project creator is auto-added as a member at creation. Other members are added/removed
+  by a `grant(P)` holder via the members endpoints (`POST`/`DELETE /api/projects/{P}/members`).
+- Removing a member also revokes that user's project-scoped role assignments, so no
+  project permissions can outlive membership. Removing the sole member of `project_admin:<P>`
+  is refused (lockout protection).
+
+The typical flow is **add the user as a member first, then grant them permissions** (assign
+roles). A bare member sees the project shell; an admin layers template/value/grant
+permissions on top via roles.
 
 ---
 

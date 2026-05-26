@@ -95,16 +95,38 @@ Authentication only proves identity; it grants no resource permissions.
 | Method | Path | Expected enforcement | Current implementation | Status |
 |---|---|---|---|---|
 | POST | `/api/projects` | `create:project` | Route MW: `create:project` | ✅ |
-| GET | `/api/projects` | Authenticated (no scoping) | Authenticated — returns all projects | ✅ |
-| GET | `/api/projects/{p}` | `read:project(p)` | None — any authenticated user | ❌ |
+| GET | `/api/projects` | Scoped to readable projects | In-handler: filtered to projects the caller holds `read:project` on (superuser sees all) | ✅ |
+| GET | `/api/projects/{p}` | `read:project(p)` | Route MW: `read:project(p)` | ✅ |
 | DELETE | `/api/projects/{p}` | `delete:project(p)` | Route MW: `delete:project(p)` | ✅ |
 
-> `GET /api/projects/{p}` requires a `read:project(p)` atom that **does not currently
-> exist** in `models/permissions.go` (the only read atoms are `read:project_templates`
-> and `read:project_values`). Enforcing this needs a new atom.
+> `read:project(p)` is **synthesized from project membership** (the `project_members` table),
+> not stored as a `role_permissions` row. The permission loader (`middleware/permissions.go`)
+> UNIONs a `read:project` atom per membership; being a member is the only way to obtain it
+> (besides superuser). It is deliberately **not** implied by — and does not imply — any other
+> project-scoped permission, so a bare member sees the project shell but not its
+> templates/environments/values. Both `GET` routes resolve permission before existence, so an
+> unauthorized caller gets `403` (not `404`) for a project they cannot read. See the
+> *Project Members* section below.
 
 Note: project creation auto-creates the `project_admin:<p>` role and assigns it to the
-creator (`handlers/projects.go`).
+creator, and also adds the creator as a **member** of the project (`handlers/projects.go`).
+
+---
+
+## Project Members
+
+A project has a set of **members** (`project_members` table). Membership is the sole source of
+`read:project(p)` and grants nothing else — see [`permission-roles.md`](./permission-roles.md)
+§4.3. Adding/removing members is a `grant(p)` capability; listing requires `read:project(p)`.
+Removing a member also revokes that user's project-scoped role assignments, and removing the
+sole `project_admin:<p>` member is refused. Membership logic lives in
+`handlers/project_members.go`.
+
+| Method | Path | Expected enforcement | Current implementation | Status |
+|---|---|---|---|---|
+| GET | `/api/projects/{p}/members` | `read:project(p)` | Route MW: `read:project(p)` | ✅ |
+| POST | `/api/projects/{p}/members` | `grant(p)` | Route MW: `grant(p)` | ✅ |
+| DELETE | `/api/projects/{p}/members/{userID}` | `grant(p)`; sole `project_admin` undeletable | Route MW: `grant(p)` + in-handler last-admin guard | ✅ |
 
 ---
 
@@ -338,17 +360,22 @@ The single write path (workspace → PR → merge) for project objects is **impl
    create/delete reuse `create:env_values(p)` / `delete:project_values(p, *)`.
 4. ✅ **Merge** applies create/update (append version), delete (remove object), and environment
    create/delete atomically; `pr_changes` carries an `operation` column (migration `000012`).
+5. ✅ **Project read + membership** — `read:project(p)` now gates `GET /api/projects/{p}` and
+   scopes the `GET /api/projects` list. It is sourced from a new first-class **Project Member**
+   concept (`project_members`, migration `000013`): membership synthesizes `read:project` in the
+   permission loader and is managed via `/api/projects/{p}/members` (`grant(p)`). See the
+   *Project Members* section.
 
 **Still open (pre-existing gaps, out of scope for this redesign):**
 
-5. ❌ **PR lifecycle gating** — `create` (GV-only), `close` (should be author or `grant`),
+6. ❌ **PR lifecycle gating** — `create` (GV-only), `close` (should be author or `grant`),
    `approve` (should require read + role membership), and `list`/`get` (should be scoped to
    readable objects) are still ungated; only `merge`/`submit` check authorship. The
    `GET /api/pull-requests` list returns every PR (incl. other users' drafts) to any caller;
    the UI hides drafts but the data is still sent.
-6. ❌ **Deployments** (`/deploy`, `/deploy/preview`, `/deployments/latest`) — completely
+7. ❌ **Deployments** (`/deploy`, `/deploy/preview`, `/deployments/latest`) — completely
    ungated; no `deploy` atom exists. Highest-risk gap.
-7. ⚠️ **Global Values** keep their existing separate flow; `POST /global-values` and the GV/PR
+8. ⚠️ **Global Values** keep their existing separate flow; `POST /global-values` and the GV/PR
    list endpoints remain open.
-8. ❌ **Approval condition** — no endpoint to modify it after creation, and the evaluator does
+9. ❌ **Approval condition** — no endpoint to modify it after creation, and the evaluator does
    not implement the full AND/OR + parentheses grammar.
