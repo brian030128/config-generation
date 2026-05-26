@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom"
+import { NavLink, useLocation } from "react-router-dom"
 import { useState } from "react"
 import {
   ChevronsLeft,
@@ -33,8 +33,12 @@ const navItems = [
 
 export function Sidebar() {
   const { user, logout } = useAuth()
+  const location = useLocation()
   const [signOutOpen, setSignOutOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
+  const activeIndex = navItems.findIndex((item) =>
+    location.pathname.startsWith(item.to),
+  )
 
   return (
     <aside
@@ -73,7 +77,14 @@ export function Sidebar() {
           </Button>
         )}
       </div>
-      <nav className={cn("flex-1 space-y-1 p-2", collapsed && "px-2")}>
+      <nav className={cn("relative flex-1 space-y-1 p-2", collapsed && "px-2")}>
+        {activeIndex >= 0 && (
+          <div
+            aria-hidden="true"
+            className="absolute left-2 top-4 z-10 h-5 w-0.5 rounded-full bg-sidebar-accent-foreground transition-transform duration-300 ease-out"
+            style={{ transform: `translateY(${activeIndex * 40}px)` }}
+          />
+        )}
         {navItems.map((item) => (
           <NavLink
             key={item.to}
@@ -81,10 +92,10 @@ export function Sidebar() {
             title={collapsed ? item.label : undefined}
             className={({ isActive }) =>
               cn(
-                "relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                "relative flex h-9 items-center gap-3 rounded-md px-3 text-sm transition-colors",
                 collapsed && "justify-center px-0",
                 isActive
-                  ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground before:absolute before:left-0 before:top-1/2 before:h-5 before:w-0.5 before:-translate-y-1/2 before:rounded-full before:bg-sidebar-accent-foreground"
+                  ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground",
               )
             }
