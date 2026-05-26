@@ -18,7 +18,7 @@ to drive the remaining permission design work. Routes are defined in
 
 ## Design: every project mutation goes through a workspace
 
-This matrix reflects the **target design** in which a project's live state changes
+This matrix reflects the **implemented design**, in which a project's live state changes
 **only** through a workspace → PR → merge flow:
 
 - Every project mutation — creating/deleting an environment, creating/editing/deleting
@@ -35,8 +35,11 @@ This matrix reflects the **target design** in which a project's live state chang
   **merge re-checks only PR authorship and the approval condition** — it does not re-check
   write permission per object.
 
-Rows below for removed endpoints are retained for traceability and marked **Removed**.
-Global Values keep their existing separate flow and are unchanged by this redesign.
+The typed workspace write surface lives in `backend/handlers/workspace.go`; the merge logic
+that applies staged changes (including deletes and environment create/delete) is in
+`handlers/pull_requests.go`. Rows below for removed endpoints are retained for traceability and
+marked **Removed**. Global Values keep their existing separate flow and are unchanged by this
+redesign — the gaps in that section and the PR-lifecycle/deploy gaps below are **still open**.
 
 ## How enforcement works
 
@@ -113,11 +116,11 @@ All GETs read the **published base** (read-only). Authoring happens in the works
 | Method | Path | Expected enforcement | Current implementation | Status |
 |---|---|---|---|---|
 | GET | `/api/projects/{p}/templates` | `read:project_templates(p)` | Route MW | ✅ |
-| ~~POST~~ | ~~`/api/projects/{p}/templates`~~ | **Removed** — stage via `POST /api/workspace/{p}/templates` | Route MW `write` (direct write) | ❌ must remove |
+| ~~POST~~ | ~~`/api/projects/{p}/templates`~~ | **Removed** — stage via `POST /api/workspace/{p}/templates` | Removed | ✅ |
 | GET | `/api/projects/{p}/templates/{t}` | `read:project_templates(p)` | Route MW | ✅ |
 | GET | `/api/projects/{p}/templates/{t}/variables` | `read:project_templates(p)` | Route MW | ✅ |
 | GET | `/api/projects/{p}/templates/{t}/versions` | `read:project_templates(p)` | Route MW | ✅ |
-| ~~POST~~ | ~~`/api/projects/{p}/templates/{t}/versions`~~ | **Removed** — stage via `PUT /api/workspace/{p}/templates/{t}` | Route MW `write` (direct write) | ❌ must remove |
+| ~~POST~~ | ~~`/api/projects/{p}/templates/{t}/versions`~~ | **Removed** — stage via `PUT /api/workspace/{p}/templates/{t}` | Removed | ✅ |
 | GET | `/api/projects/{p}/templates/{t}/versions/{v}` | `read:project_templates(p)` | Route MW | ✅ |
 | GET | `/api/projects/{p}/variables` | `read:project_templates(p)` | Route MW | ✅ |
 
@@ -130,9 +133,9 @@ GETs read the **published base**. Creating/editing/deleting values happens in th
 
 | Method | Path | Expected enforcement | Current implementation | Status |
 |---|---|---|---|---|
-| ~~POST~~ | ~~`/api/projects/{p}/values`~~ | **Removed** — stage via `PUT /api/workspace/{p}/envs/{e}/values` | Route MW `create:env_values` (direct write) | ❌ must remove |
+| ~~POST~~ | ~~`/api/projects/{p}/values`~~ | **Removed** — stage via `PUT /api/workspace/{p}/envs/{e}/values` | Removed | ✅ |
 | GET | `/api/projects/{p}/envs/{e}/values` | `read:project_values(p, e)` | Route MW | ✅ |
-| ~~POST~~ | ~~`/api/projects/{p}/envs/{e}/values/versions`~~ | **Removed** — stage via `PUT /api/workspace/{p}/envs/{e}/values` | Route MW `write` (direct write) | ❌ must remove |
+| ~~POST~~ | ~~`/api/projects/{p}/envs/{e}/values/versions`~~ | **Removed** — stage via `PUT /api/workspace/{p}/envs/{e}/values` | Removed | ✅ |
 | GET | `/api/projects/{p}/envs/{e}/values/versions/{v}` | `read:project_values(p, e)` | Route MW | ✅ |
 
 ---
@@ -258,6 +261,13 @@ tree mirrors the published read tree under `/api/projects/{p}`.
 A staged change requires the same permission the equivalent direct write used to require
 (checked at stage time). Merge then re-checks only authorship + approval.
 
+**Status: ✅ implemented.** Every endpoint below is gated by Route MW exactly as its *Expected
+enforcement* column states (`router.go`), with two in-handler refinements:
+- `DELETE /environments/{e}` requires the wildcard `delete:project_values(p, *)` (the route fixes
+  the env key to `*`), since deleting an environment tears down all its value sets.
+- `PUT /envs/{e}/values` is route-gated by `write:project_values(p, e)`; when no live value set
+  exists yet, the handler additionally requires `create:env_values(p)` via `CheckPermission`.
+
 ### Lifecycle
 
 | Method | Path | Expected enforcement | Notes |
@@ -310,28 +320,35 @@ holder may update a scope's `approval_condition` at any time.
 
 ---
 
-## Summary of work to reach the target design
+## Implementation status
 
-The redesign establishes a single write path (workspace → PR → merge) for project objects.
-The remaining work, in rough priority order:
+The single write path (workspace → PR → merge) for project objects is **implemented**.
 
-1. **Remove the direct-mutation endpoints** — `POST /templates`, `POST /templates/{t}/versions`,
-   `POST /values`, `POST /envs/{e}/values/versions`. After removal, the only way to change live
-   project state is a merge. *(Core of the redesign.)*
-2. **Build out the typed workspace write surface** — the per-object `POST`/`PUT`/`DELETE`
-   endpoints above, each gated with its `write`/`create`/`delete` atom. This replaces the single
+**Done:**
+
+1. ✅ **Direct-mutation endpoints removed** — `POST /templates`, `POST /templates/{t}/versions`,
+   `POST /values`, `POST /envs/{e}/values/versions` no longer exist. The only way to change live
+   project state is a merge.
+2. ✅ **Typed workspace write surface** — the per-object `POST`/`PUT`/`DELETE` endpoints, each
+   gated with its `write`/`create`/`delete` atom (`handlers/workspace.go`). Replaces the old
    polymorphic `/stage` endpoint and adds the previously-missing **delete** operations and
-   environment create/delete.
-3. **Gate the PR lifecycle endpoints** — `create` (GV-only), `close` (author or `grant`),
-   `approve` (read + role membership), and scope `list`/`get` to readable objects. Today only
-   `merge`/`submit` check authorship.
-4. **Add the one new permission atom** — `delete:project_templates(p)` — and assign it to the
-   auto-created `project_admin:<p>` role (see `permission-roles.md`). Environment create/delete
-   reuse `create:env_values(p)` / `delete:project_values(p, *)`.
-5. **Deployments** (`/deploy`, `/deploy/preview`, `/deployments/latest`) — still completely
-   ungated; no `deploy` atom exists. Out of scope for this redesign but remains the highest-risk
-   gap. *(Unchanged.)*
-6. **Global Values** keep their existing separate flow (direct append + per-entry PR);
-   `POST /global-values` and the GV/PR list endpoints are still open and unchanged here.
-7. **Approval condition** — no endpoint to modify it after creation, and the evaluator does not
-   implement the full AND/OR + parentheses grammar. *(Unchanged; tracked separately.)*
+   environment create/delete, plus overlay reads and change-set/unstage.
+3. ✅ **New permission atom** — `delete:project_templates(p)`, added to the auto-created
+   `project_admin:<p>` role (`handlers/projects.go`, `permission-roles.md`). Environment
+   create/delete reuse `create:env_values(p)` / `delete:project_values(p, *)`.
+4. ✅ **Merge** applies create/update (append version), delete (remove object), and environment
+   create/delete atomically; `pr_changes` carries an `operation` column (migration `000012`).
+
+**Still open (pre-existing gaps, out of scope for this redesign):**
+
+5. ❌ **PR lifecycle gating** — `create` (GV-only), `close` (should be author or `grant`),
+   `approve` (should require read + role membership), and `list`/`get` (should be scoped to
+   readable objects) are still ungated; only `merge`/`submit` check authorship. The
+   `GET /api/pull-requests` list returns every PR (incl. other users' drafts) to any caller;
+   the UI hides drafts but the data is still sent.
+6. ❌ **Deployments** (`/deploy`, `/deploy/preview`, `/deployments/latest`) — completely
+   ungated; no `deploy` atom exists. Highest-risk gap.
+7. ⚠️ **Global Values** keep their existing separate flow; `POST /global-values` and the GV/PR
+   list endpoints remain open.
+8. ❌ **Approval condition** — no endpoint to modify it after creation, and the evaluator does
+   not implement the full AND/OR + parentheses grammar.
