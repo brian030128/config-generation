@@ -182,9 +182,23 @@ func (h *ProjectHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	// Delete dependent rows in order to satisfy FK constraints.
 	cascadeQueries := []string{
+		// deployments: clear self-reference first, then child tables, then deployments
+		`UPDATE deployments SET rolled_back_from = NULL WHERE project_id = $1`,
+		`DELETE FROM deployment_entry_global_refs WHERE deployment_entry_id IN (
+			SELECT de.id FROM deployment_entries de
+			JOIN deployments d ON d.id = de.deployment_id
+			WHERE d.project_id = $1)`,
+		`DELETE FROM deployment_entries WHERE deployment_id IN (SELECT id FROM deployments WHERE project_id = $1)`,
+		`DELETE FROM deployments WHERE project_id = $1`,
+		// pull requests and their child tables
+		`DELETE FROM pr_approvals WHERE pr_id IN (SELECT id FROM pull_requests WHERE project_id = $1)`,
+		`DELETE FROM pr_changes WHERE pr_id IN (SELECT id FROM pull_requests WHERE project_id = $1)`,
+		`DELETE FROM pull_requests WHERE project_id = $1`,
+		// roles
 		`DELETE FROM user_roles WHERE role_id IN (SELECT id FROM roles WHERE project_id = $1)`,
 		`DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE project_id = $1)`,
 		`DELETE FROM roles WHERE project_id = $1`,
+		// config data and environments
 		`DELETE FROM project_config_values WHERE project_id = $1`,
 		`DELETE FROM project_config_templates WHERE project_id = $1`,
 		`DELETE FROM environments WHERE project_id = $1`,
