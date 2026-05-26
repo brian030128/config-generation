@@ -52,6 +52,7 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 
 	proj := &ProjectHandler{DB: db}
 	pm := &ProjectMemberHandler{DB: db}
+	users := &UserHandler{DB: db}
 	env := &EnvironmentHandler{DB: db}
 	tmpl := &TemplateHandler{DB: db}
 	vals := &ValuesHandler{DB: db}
@@ -69,6 +70,9 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 		r.Use(middleware.CSRFProtection(csrfCookieName))
 
 		r.Route("/api", func(r chi.Router) {
+
+			// --- Users (directory search; powers the member picker) ---
+			r.Get("/users", users.Search)
 
 			// --- Projects ---
 			r.Route("/projects", func(r chi.Router) {
