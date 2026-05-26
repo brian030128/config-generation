@@ -186,6 +186,26 @@ export interface CreatePullRequestRequest {
   proposed_payload: string
 }
 
+// Workspace validation
+export interface WorkspaceProblem {
+  kind:
+    | "no_environments"
+    | "missing_values"
+    | "unknown_global_values"
+    | "unknown_key"
+    | "template_parse"
+    | "template_exec"
+  template_name?: string
+  environment_name?: string
+  missing_keys?: string[]
+  message: string
+}
+
+export interface WorkspaceValidationResponse {
+  valid: boolean
+  problems: WorkspaceProblem[]
+}
+
 // Deployment types
 export interface DeployPreviewRequest {
   template_versions: Record<string, number>

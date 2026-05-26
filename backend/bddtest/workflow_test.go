@@ -50,9 +50,13 @@ var _ = Describe("Multi-Project Workflow", func() {
 		})
 
 		It("bob authors an edit in billing that merges via alice's approval", func() {
-			// Live baseline (created by the project admin).
+			// Live baseline (created by the project admin). Both environments and
+			// the referenced global values must stay renderable so bob's edit can
+			// be submitted (the whole project is validated at submit time).
 			createTemplate(aliceID, "alice", "billing-service", "app.yaml", "service: {{ .service_name }}")
+			seedGlobalValues(aliceID, "shared_db", map[string]any{"host": "db.internal"})
 			seedValues(aliceID, "billing-service", "staging", map[string]any{"service_name": "billing"})
+			seedValues(aliceID, "billing-service", "prod", map[string]any{"service_name": "billing-prod", "db_host": "db.internal"})
 
 			By("bob stages a template edit and a values edit")
 			rec := doRequest("PUT", "/api/workspace/billing-service/templates/app.yaml", map[string]any{

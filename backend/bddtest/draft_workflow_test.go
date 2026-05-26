@@ -311,4 +311,109 @@ var _ = Describe("Workspace Workflow (all changes through PR)", func() {
 			Expect(decode[map[string]any](rec)["count"]).To(BeEquivalentTo(0))
 		})
 	})
+
+	Context("submit validation (the whole project must render)", func() {
+		submitDraft := func(title string) int {
+			GinkgoHelper()
+			rec := doRequest("GET", "/api/workspace/my-service", nil, aliceID, "alice")
+			prID := decode[map[string]any](rec)["id"].(float64)
+			rec = doRequest("POST", fmt.Sprintf("/api/pull-requests/%.0f/submit", prID),
+				map[string]any{"title": title}, aliceID, "alice")
+			return rec.Code
+		}
+
+		It("blocks submit when a template has required variables but no environment", func() {
+			doRequest("POST", "/api/workspace/my-service/templates", map[string]any{
+				"template_name": "app.yaml", "body": "service: {{ .service_name }}",
+			}, aliceID, "alice")
+
+			By("validate reports the workspace is invalid")
+			rec := doRequest("GET", "/api/workspace/my-service/validate", nil, aliceID, "alice")
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			body := decode[map[string]any](rec)
+			Expect(body["valid"]).To(Equal(false))
+			problems := body["problems"].([]any)
+			Expect(problems).To(HaveLen(1))
+			Expect(problems[0].(map[string]any)["kind"]).To(Equal("no_environments"))
+
+			By("submit is rejected with workspace_invalid")
+			rec = doRequest("GET", "/api/workspace/my-service", nil, aliceID, "alice")
+			prID := decode[map[string]any](rec)["id"].(float64)
+			rec = doRequest("POST", fmt.Sprintf("/api/pull-requests/%.0f/submit", prID),
+				map[string]any{"title": "no env"}, aliceID, "alice")
+			Expect(rec.Code).To(Equal(http.StatusUnprocessableEntity))
+			Expect(decode[map[string]any](rec)["code"]).To(Equal("workspace_invalid"))
+		})
+
+		It("blocks submit when an environment is missing a required value", func() {
+			doRequest("POST", "/api/workspace/my-service/environments", map[string]any{"name": "staging"}, aliceID, "alice")
+			doRequest("POST", "/api/workspace/my-service/templates", map[string]any{
+				"template_name": "app.yaml", "body": "service: {{ .service_name }}\nport: {{ .port }}",
+			}, aliceID, "alice")
+			doRequest("PUT", "/api/workspace/my-service/envs/staging/values", map[string]any{
+				"payload": map[string]any{"service_name": "my-service"}, // missing port
+			}, aliceID, "alice")
+
+			rec := doRequest("GET", "/api/workspace/my-service/validate", nil, aliceID, "alice")
+			body := decode[map[string]any](rec)
+			Expect(body["valid"]).To(Equal(false))
+			problems := body["problems"].([]any)
+			Expect(problems).To(HaveLen(1))
+			p := problems[0].(map[string]any)
+			Expect(p["kind"]).To(Equal("missing_values"))
+			Expect(p["environment_name"]).To(Equal("staging"))
+			Expect(p["template_name"]).To(Equal("app.yaml"))
+			Expect(p["missing_keys"]).To(ConsistOf("port"))
+
+			Expect(submitDraft("missing port")).To(Equal(http.StatusUnprocessableEntity))
+		})
+
+		It("blocks submit when values reference a global values entry that does not exist", func() {
+			doRequest("POST", "/api/workspace/my-service/environments", map[string]any{"name": "staging"}, aliceID, "alice")
+			doRequest("POST", "/api/workspace/my-service/templates", map[string]any{
+				"template_name": "app.yaml", "body": "host: {{ .db_host }}",
+			}, aliceID, "alice")
+			doRequest("PUT", "/api/workspace/my-service/envs/staging/values", map[string]any{
+				"payload": map[string]any{"db_host": "${missing_db.host}"},
+			}, aliceID, "alice")
+
+			rec := doRequest("GET", "/api/workspace/my-service/validate", nil, aliceID, "alice")
+			body := decode[map[string]any](rec)
+			Expect(body["valid"]).To(Equal(false))
+			var kinds []string
+			for _, p := range body["problems"].([]any) {
+				kinds = append(kinds, p.(map[string]any)["kind"].(string))
+			}
+			Expect(kinds).To(ContainElement("unknown_global_values"))
+			Expect(submitDraft("bad ref")).To(Equal(http.StatusUnprocessableEntity))
+		})
+
+		It("allows submit when every environment fills every template", func() {
+			doRequest("POST", "/api/workspace/my-service/environments", map[string]any{"name": "staging"}, aliceID, "alice")
+			doRequest("POST", "/api/workspace/my-service/templates", map[string]any{
+				"template_name": "app.yaml", "body": "service: {{ .service_name }}\nport: {{ .port }}",
+			}, aliceID, "alice")
+			doRequest("PUT", "/api/workspace/my-service/envs/staging/values", map[string]any{
+				"payload": map[string]any{"service_name": "my-service", "port": "8080"},
+			}, aliceID, "alice")
+
+			rec := doRequest("GET", "/api/workspace/my-service/validate", nil, aliceID, "alice")
+			body := decode[map[string]any](rec)
+			Expect(body["valid"]).To(Equal(true))
+			Expect(body["problems"]).To(BeEmpty())
+
+			Expect(submitDraft("all good")).To(Equal(http.StatusOK))
+		})
+
+		It("treats a variable-free template with no environment as valid", func() {
+			doRequest("POST", "/api/workspace/my-service/templates", map[string]any{
+				"template_name": "static.yaml", "body": "kind: ConfigMap",
+			}, aliceID, "alice")
+
+			rec := doRequest("GET", "/api/workspace/my-service/validate", nil, aliceID, "alice")
+			body := decode[map[string]any](rec)
+			Expect(body["valid"]).To(Equal(true))
+			Expect(submitDraft("static only")).To(Equal(http.StatusOK))
+		})
+	})
 })

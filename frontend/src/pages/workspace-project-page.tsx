@@ -2,7 +2,11 @@ import { useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 import { useProject } from "@/hooks/use-projects"
-import { useActiveDraft, useSubmitDraft } from "@/hooks/use-pull-requests"
+import {
+  useActiveDraft,
+  useSubmitDraft,
+  useValidateWorkspace,
+} from "@/hooks/use-pull-requests"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -17,7 +21,18 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { TemplateList } from "@/components/templates/template-list"
 import { EnvironmentList } from "@/components/environments/environment-list"
-import { ArrowLeft } from "lucide-react"
+import type { WorkspaceProblem } from "@/api/types"
+import { ArrowLeft, AlertTriangle } from "lucide-react"
+
+function problemText(p: WorkspaceProblem): string {
+  if (p.kind === "no_environments") {
+    return "Add an environment before submitting — templates have no values to render against."
+  }
+  if (p.kind === "missing_values" && p.missing_keys?.length) {
+    return `Environment "${p.environment_name}" is missing values for template "${p.template_name}": ${p.missing_keys.join(", ")}`
+  }
+  return p.message
+}
 
 export default function WorkspaceProjectPage() {
   const { name } = useParams<{ name: string }>()
@@ -31,6 +46,11 @@ export default function WorkspaceProjectPage() {
   const [submitDesc, setSubmitDesc] = useState("")
 
   const changeCount = draft?.changes?.length ?? 0
+  const isDraftWithChanges = draft?.status === "draft" && changeCount > 0
+
+  const { data: validation } = useValidateWorkspace(name!, isDraftWithChanges)
+  const problems = validation?.problems ?? []
+  const isInvalid = !!validation && !validation.valid
 
   // Which templates/envs have changes in the draft
   const modifiedTemplates = new Set(
@@ -51,8 +71,9 @@ export default function WorkspaceProjectPage() {
           setSubmitDesc("")
         },
         onError: (err) => {
+          const e = err as { response?: { data?: { error?: string } }; message?: string }
           toast.error("Failed to submit", {
-            description: (err as Error).message,
+            description: e.response?.data?.error ?? e.message ?? "Unknown error",
           })
         },
       },
@@ -95,8 +116,10 @@ export default function WorkspaceProjectPage() {
           )}
         </div>
         <div className="flex gap-2">
-          {draft?.status === "draft" && changeCount > 0 && (
-            <Button onClick={() => setSubmitOpen(true)}>Submit PR</Button>
+          {isDraftWithChanges && (
+            <Button onClick={() => setSubmitOpen(true)} disabled={isInvalid}>
+              Submit PR
+            </Button>
           )}
           {draft && draft.status !== "draft" && (
             <Button
@@ -134,6 +157,21 @@ export default function WorkspaceProjectPage() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Validation problems — block submit until resolved */}
+      {isDraftWithChanges && isInvalid && (
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3">
+          <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-destructive">
+            <AlertTriangle className="h-4 w-4" />
+            Resolve {problems.length} problem{problems.length !== 1 ? "s" : ""} before submitting
+          </h3>
+          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+            {problems.map((p, i) => (
+              <li key={i}>{problemText(p)}</li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -191,7 +229,7 @@ export default function WorkspaceProjectPage() {
               </Button>
               <Button
                 onClick={handleSubmit}
-                disabled={!submitTitle.trim() || submitDraft.isPending}
+                disabled={!submitTitle.trim() || submitDraft.isPending || isInvalid}
               >
                 {submitDraft.isPending ? "Submitting..." : "Submit"}
               </Button>
