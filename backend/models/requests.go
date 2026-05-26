@@ -63,6 +63,10 @@ type AssignUserRoleRequest struct {
 	UserID int64 `json:"user_id"`
 }
 
+type AddProjectMemberRequest struct {
+	UserID int64 `json:"user_id"`
+}
+
 type RegisterRequest struct {
 	Username    string  `json:"username"`
 	Password    string  `json:"password"`

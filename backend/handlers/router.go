@@ -51,6 +51,8 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 	})
 
 	proj := &ProjectHandler{DB: db}
+	pm := &ProjectMemberHandler{DB: db}
+	users := &UserHandler{DB: db}
 	env := &EnvironmentHandler{DB: db}
 	tmpl := &TemplateHandler{DB: db}
 	vals := &ValuesHandler{DB: db}
@@ -69,6 +71,9 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 
 		r.Route("/api", func(r chi.Router) {
 
+			// --- Users (directory search; powers the member picker) ---
+			r.Get("/users", users.Search)
+
 			// --- Projects ---
 			r.Route("/projects", func(r chi.Router) {
 				r.With(perm(db, "create", "project", nil, nil, nil)).
@@ -76,9 +81,20 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 				r.Get("/", proj.List)
 
 				r.Route("/{projectName}", func(r chi.Router) {
-					r.Get("/", proj.Get)
+					r.With(perm(db, "read", "project", param("projectName"), nil, nil)).
+						Get("/", proj.Get)
 					r.With(perm(db, "delete", "project", param("projectName"), nil, nil)).
 						Delete("/", proj.Delete)
+
+					// --- Members (membership grants read:project) ---
+					r.Route("/members", func(r chi.Router) {
+						r.With(perm(db, "read", "project", param("projectName"), nil, nil)).
+							Get("/", pm.ListMembers)
+						r.With(perm(db, "grant", "", param("projectName"), nil, nil)).
+							Post("/", pm.AddMember)
+						r.With(perm(db, "grant", "", param("projectName"), nil, nil)).
+							Delete("/{userID}", pm.RemoveMember)
+					})
 
 					// --- Templates ---
 					r.Route("/templates", func(r chi.Router) {

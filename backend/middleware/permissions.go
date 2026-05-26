@@ -18,14 +18,22 @@ type effectivePermission struct {
 	KeyName    *string
 }
 
-// loadEffectivePermissions queries all permission atoms for a user
-// by joining user_roles with role_permissions.
+// loadEffectivePermissions queries all permission atoms for a user by joining
+// user_roles with role_permissions, plus a read:project atom synthesized from
+// each of the user's project memberships. Membership is the only source of
+// read:project — it is not granted via role_permissions and is not implied by
+// any other project-scoped permission.
 func loadEffectivePermissions(ctx context.Context, db *sql.DB, userID int64) ([]effectivePermission, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT rp.action, rp.resource, rp.key_project, rp.key_env, rp.key_name
 		FROM user_roles ur
 		JOIN role_permissions rp ON rp.role_id = ur.role_id
 		WHERE ur.user_id = $1
+		UNION ALL
+		SELECT 'read', 'project', p.name, NULL, NULL
+		FROM project_members pm
+		JOIN projects p ON p.id = pm.project_id
+		WHERE pm.user_id = $1
 	`, userID)
 	if err != nil {
 		return nil, err
@@ -197,4 +205,33 @@ func CheckPermission(ctx context.Context, db *sql.DB, userID int64, req models.P
 		return false, err
 	}
 	return HasPermission(perms, req), nil
+}
+
+// IsSuperuser reports whether the user has the superuser flag set.
+func IsSuperuser(ctx context.Context, db *sql.DB, userID int64) (bool, error) {
+	return isSuperuser(ctx, db, userID)
+}
+
+// EffectivePermissionSet is a user's full set of effective permission atoms,
+// loaded once. Use Can to test requirements without re-querying — useful for
+// filtering a list (e.g. scoping projects to those the caller can read) where
+// per-item CheckPermission calls would be N+1 queries.
+type EffectivePermissionSet struct {
+	perms []effectivePermission
+}
+
+// Can reports whether the set satisfies the requirement, applying the same
+// wildcard and implication rules as the route middleware.
+func (s EffectivePermissionSet) Can(req models.PermissionRequirement) bool {
+	return HasPermission(s.perms, req)
+}
+
+// LoadEffectivePermissions loads all effective permission atoms for a user in a
+// single query (including read:project atoms synthesized from membership).
+func LoadEffectivePermissions(ctx context.Context, db *sql.DB, userID int64) (EffectivePermissionSet, error) {
+	perms, err := loadEffectivePermissions(ctx, db, userID)
+	if err != nil {
+		return EffectivePermissionSet{}, err
+	}
+	return EffectivePermissionSet{perms: perms}, nil
 }

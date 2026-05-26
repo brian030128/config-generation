@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { TemplateList } from "@/components/templates/template-list"
 import { EnvironmentList } from "@/components/environments/environment-list"
+import { MemberList } from "@/components/projects/member-list"
 import { ArrowUpRight } from "lucide-react"
 
 export default function ProjectPage() {
@@ -42,6 +43,7 @@ export default function ProjectPage() {
         <TabsList>
           <TabsTrigger value="templates">Templates</TabsTrigger>
           <TabsTrigger value="environments">Environments</TabsTrigger>
+          <TabsTrigger value="members">Members</TabsTrigger>
         </TabsList>
 
         <TabsContent value="templates" className="mt-4">
@@ -50,6 +52,10 @@ export default function ProjectPage() {
 
         <TabsContent value="environments" className="mt-4">
           <EnvironmentList projectName={name!} />
+        </TabsContent>
+
+        <TabsContent value="members" className="mt-4">
+          <MemberList projectName={name!} />
         </TabsContent>
       </Tabs>
     </div>

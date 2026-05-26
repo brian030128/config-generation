@@ -165,7 +165,10 @@ var _ = Describe("Multi-Project Workflow", func() {
 			rec := doRequest("DELETE", "/api/projects/billing-service", nil, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusNoContent))
 
-			rec = doRequest("GET", "/api/projects/billing-service", nil, aliceID, "alice")
+			// alice lost membership on delete; confirm the project is gone via a
+			// superuser (who bypasses read:project).
+			rootID := seedSuperuser("root", "Root")
+			rec = doRequest("GET", "/api/projects/billing-service", nil, rootID, "root")
 			Expect(rec.Code).To(Equal(http.StatusNotFound))
 
 			rec = doRequest("GET", "/api/projects/payments-service/templates/app.yaml", nil, carolID, "carol")

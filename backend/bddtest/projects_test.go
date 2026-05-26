@@ -121,7 +121,7 @@ var _ = Describe("Projects", func() {
 	})
 
 	Context("getting a project by name", func() {
-		It("returns 200 for existing project", func() {
+		It("returns 200 for the creator (auto-member)", func() {
 			createProject(aliceID, "alice", "billing-service")
 
 			rec := doRequest("GET", "/api/projects/billing-service", nil, aliceID, "alice")
@@ -130,8 +130,17 @@ var _ = Describe("Projects", func() {
 			Expect(body["name"]).To(Equal("billing-service"))
 		})
 
-		It("returns 404 for non-existent project", func() {
-			rec := doRequest("GET", "/api/projects/nonexistent", nil, aliceID, "alice")
+		It("returns 403 for a non-member (read:project required)", func() {
+			createProject(aliceID, "alice", "billing-service")
+
+			bobID := seedUser("bob", "Bob Jones")
+			rec := doRequest("GET", "/api/projects/billing-service", nil, bobID, "bob")
+			Expect(rec.Code).To(Equal(http.StatusForbidden))
+		})
+
+		It("returns 404 for non-existent project (superuser bypasses read:project)", func() {
+			rootID := seedSuperuser("root", "Root")
+			rec := doRequest("GET", "/api/projects/nonexistent", nil, rootID, "root")
 			Expect(rec.Code).To(Equal(http.StatusNotFound))
 		})
 	})
@@ -143,7 +152,10 @@ var _ = Describe("Projects", func() {
 			rec := doRequest("DELETE", "/api/projects/billing-service", nil, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusNoContent))
 
-			rec = doRequest("GET", "/api/projects/billing-service", nil, aliceID, "alice")
+			// alice lost her membership when the project was deleted; confirm it
+			// is truly gone via a superuser (who bypasses read:project).
+			rootID := seedSuperuser("root", "Root")
+			rec = doRequest("GET", "/api/projects/billing-service", nil, rootID, "root")
 			Expect(rec.Code).To(Equal(http.StatusNotFound))
 		})
 

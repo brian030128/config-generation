@@ -1,8 +1,19 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
+import { AxiosError } from "axios"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
+}
+
+// getApiErrorMessage extracts the backend's `error` message from an axios error,
+// falling back to the generic error message.
+export function getApiErrorMessage(err: unknown): string {
+  if (err instanceof AxiosError && err.response?.data?.error) {
+    return err.response.data.error as string
+  }
+  if (err instanceof Error) return err.message
+  return "Something went wrong"
 }
 
 export function formatRelativeTime(dateString: string): string {

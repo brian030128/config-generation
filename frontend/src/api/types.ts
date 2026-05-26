@@ -11,6 +11,13 @@ export interface ErrorResponse {
 }
 
 // Domain models
+export interface User {
+  id: number
+  username: string
+  display_name: string | null
+  created_at: string
+}
+
 export interface Project {
   id: number
   name: string
@@ -28,6 +35,14 @@ export interface Environment {
   description: string | null
   created_by: number
   created_at: string
+}
+
+export interface ProjectMember {
+  user_id: number
+  username: string
+  display_name: string | null
+  added_by: number
+  added_at: string
 }
 
 export interface ProjectConfigTemplate {
@@ -97,6 +112,10 @@ export interface CreateProjectRequest {
   name: string
   description?: string
   approval_condition?: string
+}
+
+export interface AddProjectMemberRequest {
+  user_id: number
 }
 
 export interface CreateTemplateRequest {
