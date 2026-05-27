@@ -25,6 +25,20 @@ export function parseApprovalCondition(condition: string): ApprovalRequirement[]
   return reqs
 }
 
+// A single, complete requirement: "N x role" (role is any run of non-space chars).
+const FULL_REQ_RE = /^\d+\s*x\s*\S+$/i
+
+// isWellFormed checks the whole condition is a sequence of complete "N x role"
+// requirements joined by AND/OR — with no dangling token (e.g. a trailing
+// "1 x " with no role, or a stray "AND"). The extraction regex alone ignores
+// such fragments, so this guards against silently accepting them.
+export function isWellFormed(condition: string): boolean {
+  const trimmed = condition.trim()
+  if (!trimmed) return false
+  const parts = trimmed.split(/\s+(?:AND|OR)\s+/i)
+  return parts.every((p) => FULL_REQ_RE.test(p.trim()))
+}
+
 // A requirement role is satisfiable if a known/built-in role name equals it or
 // has it as a "name:" prefix (e.g. "project_admin" matches "project_admin:billing").
 function satisfiable(role: string, known: string[]): boolean {
@@ -44,7 +58,7 @@ export function validateApprovalCondition(
     errors.push("Approval condition is required.")
     return { valid: false, errors, requirements }
   }
-  if (requirements.length === 0) {
+  if (requirements.length === 0 || !isWellFormed(trimmed)) {
     errors.push(
       'Could not parse — use e.g. "1 x project_admin AND 1 x release_manager".',
     )

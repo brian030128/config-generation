@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -12,6 +13,29 @@ import (
 type approvalConditionError struct{ msg string }
 
 func (e *approvalConditionError) Error() string { return e.msg }
+
+var (
+	approvalConnectorRe = regexp.MustCompile(`(?i)\s+(?:AND|OR)\s+`)
+	approvalFullReqRe   = regexp.MustCompile(`(?i)^\d+\s*x\s*\S+$`)
+)
+
+// approvalConditionWellFormed reports whether the whole condition is a sequence
+// of complete "N x role" requirements joined by AND/OR, with no dangling token
+// (e.g. a trailing "1 x " with no role, or a stray AND). parseApprovalCondition
+// alone extracts only the complete atoms and ignores such fragments, so this
+// guards against silently accepting a half-typed condition.
+func approvalConditionWellFormed(condition string) bool {
+	condition = strings.TrimSpace(condition)
+	if condition == "" {
+		return false
+	}
+	for _, part := range approvalConnectorRe.Split(condition, -1) {
+		if !approvalFullReqRe.MatchString(strings.TrimSpace(part)) {
+			return false
+		}
+	}
+	return true
+}
 
 // existingRoleNames returns the names of all roles. Roles are a single global
 // namespace, so a condition is checked against every role.
@@ -44,7 +68,7 @@ func validateApprovalCondition(ctx context.Context, db *sql.DB, builtins []strin
 		return &approvalConditionError{"approval condition is required"}
 	}
 	reqs := parseApprovalCondition(condition)
-	if len(reqs) == 0 {
+	if len(reqs) == 0 || !approvalConditionWellFormed(condition) {
 		return &approvalConditionError{`approval condition is not parseable; use e.g. "1 x test_project_admin AND 1 x release_manager"`}
 	}
 	for _, req := range reqs {

@@ -183,6 +183,14 @@ var _ = Describe("Roles (global)", func() {
 			Expect(rec.Code).To(Equal(http.StatusBadRequest))
 		})
 
+		It("rejects a malformed condition with a dangling requirement", func() {
+			createProject(aliceID, "alice", "billing")
+			rec := doRequest("PUT", "/api/projects/billing/approval-condition", map[string]any{
+				"approval_condition": "1 x billing_project_admin AND 1 x ",
+			}, aliceID, "alice")
+			Expect(rec.Code).To(Equal(http.StatusBadRequest))
+		})
+
 		It("forbids a non-admin from updating the approval condition", func() {
 			createProject(aliceID, "alice", "billing")
 			addProjectMember(aliceID, "alice", "billing", bobID)
