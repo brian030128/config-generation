@@ -62,8 +62,8 @@ export function RoleList() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-medium">Roles</h2>
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold">Roles</h1>
           <p className="text-sm text-muted-foreground">
             Global, named bundles of permissions. Reference them by name in a
             project's or entry's approval condition.
