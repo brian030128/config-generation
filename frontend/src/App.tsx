@@ -8,6 +8,7 @@ import ProjectEnvPage from "@/pages/project-env-page"
 import MemberPermissionsPage from "@/pages/member-permissions-page"
 import GlobalValuesListPage from "@/pages/global-values-list"
 import GlobalValuesDetailPage from "@/pages/global-values-detail"
+import RolesPage from "@/pages/roles-page"
 import CreatePRPage from "@/pages/create-pr"
 import PullRequestsPage from "@/pages/pull-requests-page"
 import PRDetailPage from "@/pages/pr-detail-page"
@@ -30,6 +31,7 @@ const router = createBrowserRouter([
         element: <ProjectPage tab="environments" />,
       },
       { path: "projects/:name/members", element: <ProjectPage tab="members" /> },
+      { path: "projects/:name/approval", element: <ProjectPage tab="approval" /> },
       {
         path: "projects/:name/members/:userId/permissions",
         element: <MemberPermissionsPage />,
@@ -38,6 +40,7 @@ const router = createBrowserRouter([
       { path: "global-values", element: <GlobalValuesListPage /> },
       { path: "global-values/:name", element: <GlobalValuesDetailPage /> },
       { path: "global-values/:name/create-pr", element: <CreatePRPage /> },
+      { path: "roles", element: <RolesPage /> },
       { path: "pull-requests", element: <PullRequestsPage /> },
       { path: "pull-requests/:id", element: <PRDetailPage /> },
       { path: "deploy", element: <DeployPage /> },

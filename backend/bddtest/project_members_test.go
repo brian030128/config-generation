@@ -157,19 +157,24 @@ var _ = Describe("Project Members (read:project)", func() {
 			Expect(projectNamesInList(rec)).NotTo(HaveKey("billing"))
 		})
 
-		It("also revokes the member's project-scoped role assignments", func() {
+		It("revokes the member's per-member granted permissions on removal", func() {
 			createTemplate(aliceID, "alice", "billing", "app.yaml", "body")
-			roleID := createCustomRole(aliceID, "alice", "billing", "billing-tmpl-reader", []map[string]any{
-				{"action": "read", "resource": "project_templates", "key_project": "billing"},
-			})
-			assignUserToRole(aliceID, "alice", roleID, bobID)
 			addProjectMember(aliceID, "alice", "billing", bobID)
 
-			By("bob can read templates while a member")
-			rec := doRequest("GET", "/api/projects/billing/templates", nil, bobID, "bob")
+			By("alice grants bob read-templates via the member permissions editor")
+			rec := doRequest("PUT", fmt.Sprintf("/api/projects/billing/members/%d/permissions", bobID), map[string]any{
+				"read_templates":   true,
+				"write_templates":  false,
+				"delete_templates": false,
+				"environments":     []any{},
+			}, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusOK))
 
-			By("removing membership revokes the template-reader role too")
+			By("bob can read templates while a member")
+			rec = doRequest("GET", "/api/projects/billing/templates", nil, bobID, "bob")
+			Expect(rec.Code).To(Equal(http.StatusOK))
+
+			By("removing membership revokes those per-member permissions")
 			rec = doRequest("DELETE", fmt.Sprintf("/api/projects/billing/members/%d", bobID), nil, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusNoContent))
 

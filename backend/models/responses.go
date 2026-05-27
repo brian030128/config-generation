@@ -16,6 +16,25 @@ type ProjectMembersResponse struct {
 	ViewerCanManage bool            `json:"viewer_can_manage"`
 }
 
+// RolesResponse is the roles list for a scope (project or global values entry)
+// plus whether the caller holds grant on that scope — i.e. may create/edit/
+// delete roles and assign members. Mirrors ProjectMembersResponse: the list is
+// readable by anyone with read on the scope, while ViewerCanManage gates the
+// management controls in the UI.
+type RolesResponse struct {
+	Items           []Role `json:"items"`
+	Count           int    `json:"count"`
+	ViewerCanManage bool   `json:"viewer_can_manage"`
+}
+
+// GlobalValuesDetailResponse is the latest version of a global values entry plus
+// whether the caller holds grant on it (may edit the approval policy). Mirrors
+// the ViewerCanManage flag projects expose via their members endpoint.
+type GlobalValuesDetailResponse struct {
+	GlobalValues
+	ViewerCanManage bool `json:"viewer_can_manage"`
+}
+
 type ErrorResponse struct {
 	Error   string `json:"error"`
 	Code    string `json:"code,omitempty"`

@@ -9,20 +9,27 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func createCustomRole(userID int64, username, projectName, roleName string, permissions []map[string]any) float64 {
-	rec := doRequest("POST", "/api/projects/"+projectName+"/roles", map[string]any{
+// Roles are a global namespace and managing them is superuser-only. These
+// helpers seed a throwaway superuser to perform the (global) role operation, so
+// existing call sites that pass a project admin + project name keep compiling —
+// those args are ignored now (scope comes from the permission atoms).
+func createCustomRole(_ int64, _, _, roleName string, permissions []map[string]any) float64 {
+	su := seedSuperuser("su_create_"+roleName, "Role Admin")
+	rec := doRequest("POST", "/api/roles", map[string]any{
 		"name":        roleName,
 		"permissions": permissions,
-	}, userID, username)
+	}, su, "su_create_"+roleName)
 	Expect(rec.Code).To(Equal(http.StatusCreated))
 	body := decode[map[string]any](rec)
 	return body["id"].(float64)
 }
 
-func assignUserToRole(adminID int64, adminUsername string, roleID float64, targetUserID int64) {
+func assignUserToRole(_ int64, _ string, roleID float64, targetUserID int64) {
+	uname := fmt.Sprintf("su_assign_%v_%v", int64(roleID), targetUserID)
+	su := seedSuperuser(uname, "Role Admin")
 	rec := doRequest("POST", fmt.Sprintf("/api/roles/%v/members", int64(roleID)), map[string]any{
 		"user_id": targetUserID,
-	}, adminID, adminUsername)
+	}, su, uname)
 	Expect(rec.Code).To(Equal(http.StatusCreated))
 }
 
@@ -48,18 +55,34 @@ func seedExtraSystemRole(userID int64) {
 }
 
 func getAutoCreatedRoleID(userID int64, username, projectName string) float64 {
-	rec := doRequest("GET", "/api/projects/"+projectName+"/roles", nil, userID, username)
+	rec := doRequest("GET", "/api/roles", nil, userID, username)
 	Expect(rec.Code).To(Equal(http.StatusOK))
 	body := decode[map[string]any](rec)
 	items := body["items"].([]any)
+	want := projectName + "_project_admin"
 	for _, item := range items {
 		role := item.(map[string]any)
-		if role["is_auto_created"].(bool) {
+		if role["name"] == want {
 			return role["id"].(float64)
 		}
 	}
 	Fail("auto-created role not found")
 	return 0
+}
+
+// findRoleByName returns the role with the given name from the global roles list.
+func findRoleByName(userID int64, username, name string) map[string]any {
+	rec := doRequest("GET", "/api/roles", nil, userID, username)
+	Expect(rec.Code).To(Equal(http.StatusOK))
+	body := decode[map[string]any](rec)
+	for _, item := range body["items"].([]any) {
+		role := item.(map[string]any)
+		if role["name"] == name {
+			return role
+		}
+	}
+	Fail("role not found: " + name)
+	return nil
 }
 
 // Permission enforcement is now exercised on the workspace write surface (the
@@ -232,15 +255,13 @@ var _ = Describe("Permission Model", func() {
 			createProject(carolID, "carol", "payments")
 		})
 
-		It("carol cannot manage roles in billing (alice's project)", func() {
-			rec := doRequest("POST", "/api/projects/billing/roles", map[string]any{
+		It("a project admin (non-superuser) cannot create global roles", func() {
+			rec := doRequest("POST", "/api/roles", map[string]any{
 				"name": "my-role",
 			}, carolID, "carol")
 			Expect(rec.Code).To(Equal(http.StatusForbidden))
-		})
 
-		It("alice cannot manage roles in payments (carol's project)", func() {
-			rec := doRequest("POST", "/api/projects/payments/roles", map[string]any{
+			rec = doRequest("POST", "/api/roles", map[string]any{
 				"name": "my-role",
 			}, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusForbidden))
@@ -248,20 +269,21 @@ var _ = Describe("Permission Model", func() {
 	})
 
 	Context("role management", func() {
-		It("project admin can create custom roles", func() {
-			rec := doRequest("POST", "/api/projects/billing/roles", map[string]any{
+		It("a superuser can create global roles", func() {
+			rootID := seedSuperuser("root", "Root")
+			rec := doRequest("POST", "/api/roles", map[string]any{
 				"name": "billing-reader",
 				"permissions": []map[string]any{
 					{"action": "read", "resource": "project_templates", "key_project": "billing"},
 				},
-			}, aliceID, "alice")
+			}, rootID, "root")
 			Expect(rec.Code).To(Equal(http.StatusCreated))
 			body := decode[map[string]any](rec)
 			Expect(body["name"]).To(Equal("billing-reader"))
 			Expect(body["is_auto_created"]).To(BeFalse())
 		})
 
-		It("project admin can assign users to roles", func() {
+		It("a non-superuser cannot assign users to roles", func() {
 			roleID := createCustomRole(aliceID, "alice", "billing", "billing-reader", []map[string]any{
 				{"action": "read", "resource": "project_templates", "key_project": "billing"},
 			})
@@ -269,31 +291,34 @@ var _ = Describe("Permission Model", func() {
 			rec := doRequest("POST", fmt.Sprintf("/api/roles/%v/members", int64(roleID)), map[string]any{
 				"user_id": bobID,
 			}, aliceID, "alice")
-			Expect(rec.Code).To(Equal(http.StatusCreated))
+			Expect(rec.Code).To(Equal(http.StatusForbidden))
 		})
 
 		It("cannot edit auto-created role permissions", func() {
-			adminRoleID := getAutoCreatedRoleID(aliceID, "alice", "billing")
+			rootID := seedSuperuser("root", "Root")
+			adminRoleID := getAutoCreatedRoleID(rootID, "root", "billing")
 
 			rec := doRequest("PUT", fmt.Sprintf("/api/roles/%v/permissions", int64(adminRoleID)), map[string]any{
 				"permissions": []map[string]any{
 					{"action": "read", "resource": "project_templates", "key_project": "billing"},
 				},
-			}, aliceID, "alice")
+			}, rootID, "root")
 			Expect(rec.Code).To(Equal(http.StatusBadRequest))
 		})
 
 		It("cannot delete auto-created roles", func() {
-			adminRoleID := getAutoCreatedRoleID(aliceID, "alice", "billing")
+			rootID := seedSuperuser("root", "Root")
+			adminRoleID := getAutoCreatedRoleID(rootID, "root", "billing")
 
-			rec := doRequest("DELETE", fmt.Sprintf("/api/roles/%v", int64(adminRoleID)), nil, aliceID, "alice")
+			rec := doRequest("DELETE", fmt.Sprintf("/api/roles/%v", int64(adminRoleID)), nil, rootID, "root")
 			Expect(rec.Code).To(Equal(http.StatusBadRequest))
 		})
 
-		It("cannot remove the last member of the project admin role", func() {
-			adminRoleID := getAutoCreatedRoleID(aliceID, "alice", "billing")
+		It("cannot remove the last member of an auto-created admin role", func() {
+			rootID := seedSuperuser("root", "Root")
+			adminRoleID := getAutoCreatedRoleID(rootID, "root", "billing")
 
-			rec := doRequest("DELETE", fmt.Sprintf("/api/roles/%v/members/%v", int64(adminRoleID), aliceID), nil, aliceID, "alice")
+			rec := doRequest("DELETE", fmt.Sprintf("/api/roles/%v/members/%v", int64(adminRoleID), aliceID), nil, rootID, "root")
 			Expect(rec.Code).To(Equal(http.StatusBadRequest))
 		})
 	})

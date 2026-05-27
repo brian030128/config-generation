@@ -8,6 +8,7 @@ import {
   LogOut,
   Pencil,
   Rocket,
+  Shield,
 } from "lucide-react"
 import { useAuth } from "@/lib/auth"
 import { cn } from "@/lib/utils"
@@ -29,6 +30,7 @@ const navItems = [
   { to: "/workspace", label: "Workspace", icon: Pencil },
   { to: "/deploy", label: "Deploy", icon: Rocket },
   { to: "/pull-requests", label: "Pull Requests", icon: GitPullRequest },
+  { to: "/roles", label: "Roles", icon: Shield },
 ]
 
 export function Sidebar() {

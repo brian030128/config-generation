@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"database/sql"
+	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/brian/config-generation/backend/middleware"
 	"github.com/brian/config-generation/backend/models"
@@ -26,6 +28,25 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Roles are global; a project's auto-created admin role is named
+	// "<project>_project_admin". The approval condition defaults to requiring it
+	// and, at creation, may only reference it (other approver roles are created on
+	// the global Roles page afterwards, then the condition is edited).
+	adminRoleName := req.Name + "_project_admin"
+	cond := "1 x " + adminRoleName
+	if req.ApprovalCondition != nil {
+		cond = *req.ApprovalCondition
+	}
+	if err := validateApprovalCondition(r.Context(), h.DB, []string{adminRoleName}, cond); err != nil {
+		var vErr *approvalConditionError
+		if errors.As(err, &vErr) {
+			writeError(w, http.StatusBadRequest, vErr.msg, "validation")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "database error", "internal")
@@ -37,9 +58,9 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var project models.Project
 	err = tx.QueryRowContext(r.Context(), `
 		INSERT INTO projects (name, description, approval_condition, created_by)
-		VALUES ($1, $2, COALESCE($3, '1 x project_admin'), $4)
+		VALUES ($1, $2, $3, $4)
 		RETURNING id, name, description, approval_condition, created_by, created_at, updated_at
-	`, req.Name, req.Description, req.ApprovalCondition, user.UserID).Scan(
+	`, req.Name, req.Description, cond, user.UserID).Scan(
 		&project.ID, &project.Name, &project.Description,
 		&project.ApprovalCondition, &project.CreatedBy,
 		&project.CreatedAt, &project.UpdatedAt,
@@ -53,13 +74,12 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Auto-create project_admin role.
-	roleName := "project_admin:" + project.Name
+	// 2. Auto-create the project's admin role (global; scope comes from its atoms).
 	var roleID int64
 	err = tx.QueryRowContext(r.Context(), `
-		INSERT INTO roles (name, project_id, is_auto_created) VALUES ($1, $2, true)
+		INSERT INTO roles (name, is_auto_created) VALUES ($1, true)
 		RETURNING id
-	`, roleName, project.ID).Scan(&roleID)
+	`, adminRoleName).Scan(&roleID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create admin role", "internal")
 		return
@@ -114,6 +134,56 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, project)
+}
+
+// UpdateApprovalCondition changes a project's PR-approval condition. The new
+// condition must be parseable and may only reference roles that exist in the
+// project (plus the built-in project_admin).
+func (h *ProjectHandler) UpdateApprovalCondition(w http.ResponseWriter, r *http.Request) {
+	projectName := chi.URLParam(r, "projectName")
+
+	var projectID int64
+	err := h.DB.QueryRowContext(r.Context(), `SELECT id FROM projects WHERE name = $1`, projectName).Scan(&projectID)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+
+	var req models.UpdateApprovalConditionRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body", "bad_request")
+		return
+	}
+
+	if err := validateApprovalCondition(r.Context(), h.DB, []string{projectName + "_project_admin"}, req.ApprovalCondition); err != nil {
+		var vErr *approvalConditionError
+		if errors.As(err, &vErr) {
+			writeError(w, http.StatusBadRequest, vErr.msg, "validation")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+
+	var project models.Project
+	err = h.DB.QueryRowContext(r.Context(), `
+		UPDATE projects SET approval_condition = $1, updated_at = now() WHERE id = $2
+		RETURNING id, name, description, approval_condition, created_by, created_at, updated_at
+	`, strings.TrimSpace(req.ApprovalCondition), projectID).Scan(
+		&project.ID, &project.Name, &project.Description,
+		&project.ApprovalCondition, &project.CreatedBy,
+		&project.CreatedAt, &project.UpdatedAt,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update approval condition", "internal")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, project)
 }
 
 func (h *ProjectHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -233,10 +303,6 @@ func (h *ProjectHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		`DELETE FROM pull_requests WHERE project_id = $1`,
 		// members
 		`DELETE FROM project_members WHERE project_id = $1`,
-		// roles
-		`DELETE FROM user_roles WHERE role_id IN (SELECT id FROM roles WHERE project_id = $1)`,
-		`DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE project_id = $1)`,
-		`DELETE FROM roles WHERE project_id = $1`,
 		// config data and environments
 		`DELETE FROM project_config_values WHERE project_id = $1`,
 		`DELETE FROM project_config_templates WHERE project_id = $1`,
@@ -246,6 +312,21 @@ func (h *ProjectHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, q := range cascadeQueries {
 		if _, err := tx.ExecContext(r.Context(), q, projectID); err != nil {
+			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			return
+		}
+	}
+
+	// Roles are global; remove only this project's auto admin role
+	// ("<name>_project_admin") and its per-member managed roles
+	// ("__member__:<name>:*"), identified by name. Other roles are left intact.
+	const projectRolesFilter = `name = $1 || '_project_admin' OR name LIKE '__member__:' || $1 || ':%'`
+	for _, q := range []string{
+		`DELETE FROM user_roles WHERE role_id IN (SELECT id FROM roles WHERE ` + projectRolesFilter + `)`,
+		`DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE ` + projectRolesFilter + `)`,
+		`DELETE FROM roles WHERE ` + projectRolesFilter,
+	} {
+		if _, err := tx.ExecContext(r.Context(), q, projectName); err != nil {
 			writeError(w, http.StatusInternalServerError, "database error", "internal")
 			return
 		}

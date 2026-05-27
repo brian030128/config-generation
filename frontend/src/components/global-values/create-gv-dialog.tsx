@@ -2,6 +2,7 @@ import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 import { useCreateGlobalValues } from "@/hooks/use-global-values"
+import { validateApprovalCondition } from "@/lib/approval-condition"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -17,18 +18,27 @@ import { Plus } from "lucide-react"
 export function CreateGlobalValuesDialog() {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState("")
-  const [approvalCondition, setApprovalCondition] = useState("1 x gv_group_admin")
+  const [approvalCondition, setApprovalCondition] = useState("")
   const createGV = useCreateGlobalValues()
   const navigate = useNavigate()
 
+  // The entry's admin role "<name>_gv_group_admin" is auto-created and is the
+  // only role that exists at creation. Blank defaults to "1 x <name>_gv_group_admin".
+  const adminRole = `${name.trim()}_gv_group_admin`
+  const approvalValidation = validateApprovalCondition(
+    approvalCondition.trim() || `1 x ${adminRole}`,
+    [],
+    [adminRole],
+  )
+
   function reset() {
     setName("")
-    setApprovalCondition("1 x gv_group_admin")
+    setApprovalCondition("")
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!name.trim()) return
+    if (!name.trim() || !approvalValidation.valid) return
     createGV.mutate(
       {
         name: name.trim(),
@@ -81,14 +91,29 @@ export function CreateGlobalValuesDialog() {
               id="gv-approval"
               value={approvalCondition}
               onChange={(e) => setApprovalCondition(e.target.value)}
-              placeholder="e.g. 1 x gv_group_admin"
+              placeholder={name.trim() ? `1 x ${adminRole}` : "1 x <name>_gv_group_admin"}
             />
+            {approvalValidation.valid ? (
+              <p className="text-xs text-muted-foreground">
+                Defaults to <code>1 x {adminRole}</code>. Add other roles on the
+                Roles page later, then update this condition.
+              </p>
+            ) : (
+              <ul className="space-y-0.5 text-xs text-destructive">
+                {approvalValidation.errors.map((e) => (
+                  <li key={e}>{e}</li>
+                ))}
+              </ul>
+            )}
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" type="button" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={createGV.isPending}>
+            <Button
+              type="submit"
+              disabled={createGV.isPending || !approvalValidation.valid}
+            >
               {createGV.isPending ? "Creating..." : "Create"}
             </Button>
           </div>

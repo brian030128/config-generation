@@ -165,13 +165,12 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 						})
 					})
 
-					// --- Roles (project-scoped) ---
-					r.Route("/roles", func(r chi.Router) {
-						r.With(perm(db, "grant", "", param("projectName"), nil, nil)).
-							Post("/", role.Create)
-						r.With(perm(db, "grant", "", param("projectName"), nil, nil)).
-							Get("/", role.ListForProject)
-					})
+					// --- Approval condition (project-scoped) ---
+					// Roles are global (managed under /api/roles); the approval
+					// condition references them by name and is editable by a
+					// project admin (grant).
+					r.With(perm(db, "grant", "", param("projectName"), nil, nil)).
+						Put("/approval-condition", proj.UpdateApprovalCondition)
 				})
 			})
 
@@ -193,11 +192,9 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 							Get("/{versionID}", gv.GetVersion)
 					})
 
-					// --- Roles (global values scoped) ---
-					r.Route("/roles", func(r chi.Router) {
-						r.With(perm(db, "grant", "global_values", nil, nil, param("name"))).
-							Get("/", role.ListForGlobalValues)
-					})
+					// --- Approval condition (global values scoped) ---
+					r.With(perm(db, "grant", "global_values", nil, nil, param("name"))).
+						Put("/approval-condition", gv.UpdateApprovalCondition)
 				})
 			})
 
@@ -269,13 +266,21 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 					Delete("/changes/{changeID}", pr.UnstageChange)
 			})
 
-			// --- Roles (non-project-scoped operations by role ID) ---
-			// Permission checks happen inside handlers since we need to look up the role's project first.
-			r.Route("/roles/{roleID}", func(r chi.Router) {
-				r.Put("/permissions", role.EditPermissions)
-				r.Delete("/", role.Delete)
-				r.Post("/members", role.AssignUser)
-				r.Delete("/members/{userID}", role.RemoveUser)
+			// --- Roles (global) ---
+			// Roles are a single global namespace; their scope comes only from
+			// their permission atoms. Listing is open to any authenticated user
+			// (the approval-condition editor needs role names); all mutations are
+			// superuser-only, enforced inside the handlers.
+			r.Route("/roles", func(r chi.Router) {
+				r.Get("/", role.List)
+				r.Post("/", role.Create)
+
+				r.Route("/{roleID}", func(r chi.Router) {
+					r.Put("/permissions", role.EditPermissions)
+					r.Delete("/", role.Delete)
+					r.Post("/members", role.AssignUser)
+					r.Delete("/members/{userID}", role.RemoveUser)
+				})
 			})
 
 		})

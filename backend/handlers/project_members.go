@@ -157,11 +157,12 @@ func (h *ProjectMemberHandler) RemoveMember(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Guard: refuse to remove a user who is the sole member of the project's
-	// auto-created admin role (would leave the project with no admin).
+	// auto-created admin role (would leave the project with no admin). Roles are
+	// global; the project's admin role is "<project>_project_admin".
 	var adminRoleID int64
 	err = h.DB.QueryRowContext(r.Context(),
-		`SELECT id FROM roles WHERE project_id = $1 AND is_auto_created = true LIMIT 1`,
-		projectID).Scan(&adminRoleID)
+		`SELECT id FROM roles WHERE name = $1 AND is_auto_created = true LIMIT 1`,
+		projectName+"_project_admin").Scan(&adminRoleID)
 	if err != nil && err != sql.ErrNoRows {
 		writeError(w, http.StatusInternalServerError, "database error", "internal")
 		return
@@ -190,14 +191,20 @@ func (h *ProjectMemberHandler) RemoveMember(w http.ResponseWriter, r *http.Reque
 	}
 	defer tx.Rollback()
 
-	// Revoke the user's project-scoped role assignments.
-	_, err = tx.ExecContext(r.Context(), `
-		DELETE FROM user_roles
-		WHERE user_id = $1 AND role_id IN (SELECT id FROM roles WHERE project_id = $2)
-	`, targetUserID, projectID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
-		return
+	// Clean up the user's per-member managed role for this project (the
+	// fine-grained capabilities a project admin granted them via the member
+	// permissions editor). Named global roles are managed separately (superuser)
+	// and are intentionally left untouched.
+	managedRole := managedMemberRoleName(projectName, targetUserID)
+	for _, q := range []string{
+		`DELETE FROM user_roles WHERE role_id IN (SELECT id FROM roles WHERE name = $1)`,
+		`DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE name = $1)`,
+		`DELETE FROM roles WHERE name = $1`,
+	} {
+		if _, err = tx.ExecContext(r.Context(), q, managedRole); err != nil {
+			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			return
+		}
 	}
 
 	result, err := tx.ExecContext(r.Context(),
