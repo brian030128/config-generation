@@ -4,7 +4,7 @@
 -- environment's value sets plus the ability to delete the environment. An
 -- env-admin can also grant env-admin to other users (self-propagating). The
 -- environment's creator and the project's admins are env-admins implicitly.
-CREATE TABLE env_admins (
+CREATE TABLE IF NOT EXISTS env_admins (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     environment_id BIGINT NOT NULL REFERENCES environments(id),
     user_id        BIGINT NOT NULL REFERENCES users(id),
@@ -13,5 +13,5 @@ CREATE TABLE env_admins (
     UNIQUE (environment_id, user_id)
 );
 
-CREATE INDEX idx_env_admins_user ON env_admins (user_id);
-CREATE INDEX idx_env_admins_env  ON env_admins (environment_id);
+CREATE INDEX IF NOT EXISTS idx_env_admins_user ON env_admins (user_id);
+CREATE INDEX IF NOT EXISTS idx_env_admins_env  ON env_admins (environment_id);
