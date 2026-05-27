@@ -168,12 +168,12 @@ export default function DeployPage() {
     gvVersions,
   ])
 
-  // Auto-trigger preview when all versions are resolved
+  // Auto-trigger preview whenever the pinned inputs change. triggerPreview is
+  // memoized on project/env/versions and guards internally on canPreview, so a
+  // new identity means a selection changed and the preview should refresh.
   useEffect(() => {
-    if (canPreview) {
-      triggerPreview()
-    }
-  }, [canPreview])
+    triggerPreview()
+  }, [triggerPreview])
 
   const handleDeploy = () => {
     deployMutation.mutate(
