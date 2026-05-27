@@ -117,6 +117,48 @@ var _ = Describe("Roles (global)", func() {
 			rec = doRequest("POST", "/api/roles", map[string]any{"name": "dup"}, rootID, "root")
 			Expect(rec.Code).To(Equal(http.StatusConflict))
 		})
+
+		It("forbids a non-superuser from editing, assigning, or deleting roles", func() {
+			roleID := createGlobalRoleAs(rootID, "root", "some-role", nil)
+
+			rec := doRequest("PUT", fmt.Sprintf("/api/roles/%d/permissions", roleID),
+				map[string]any{"permissions": []map[string]any{}}, aliceID, "alice")
+			Expect(rec.Code).To(Equal(http.StatusForbidden))
+
+			rec = doRequest("POST", fmt.Sprintf("/api/roles/%d/members", roleID),
+				map[string]any{"user_id": bobID}, aliceID, "alice")
+			Expect(rec.Code).To(Equal(http.StatusForbidden))
+
+			rec = doRequest("DELETE", fmt.Sprintf("/api/roles/%d", roleID), nil, aliceID, "alice")
+			Expect(rec.Code).To(Equal(http.StatusForbidden))
+		})
+
+		It("returns 404 for a superuser operating on a non-existent role", func() {
+			rec := doRequest("DELETE", "/api/roles/999999", nil, rootID, "root")
+			Expect(rec.Code).To(Equal(http.StatusNotFound))
+
+			rec = doRequest("PUT", "/api/roles/999999/permissions",
+				map[string]any{"permissions": []map[string]any{}}, rootID, "root")
+			Expect(rec.Code).To(Equal(http.StatusNotFound))
+		})
+
+		It("replaces a custom role's permissions", func() {
+			createProject(aliceID, "alice", "billing")
+			roleID := createGlobalRoleAs(rootID, "root", "billing-role", []map[string]any{
+				{"action": "read", "resource": "project_templates", "key_project": "billing"},
+			})
+
+			rec := doRequest("PUT", fmt.Sprintf("/api/roles/%d/permissions", roleID), map[string]any{
+				"permissions": []map[string]any{
+					{"action": "read", "resource": "project", "key_project": "billing"},
+					{"action": "write", "resource": "project_templates", "key_project": "billing"},
+				},
+			}, rootID, "root")
+			Expect(rec.Code).To(Equal(http.StatusNoContent))
+
+			role := findRoleByName(rootID, "root", "billing-role")
+			Expect(role["permissions"].([]any)).To(HaveLen(2))
+		})
 	})
 
 	Context("project approval condition", func() {
