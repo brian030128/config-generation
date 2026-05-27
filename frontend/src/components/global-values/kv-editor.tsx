@@ -1,8 +1,15 @@
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
-import type { GlobalValues } from "@/api/types"
+import type { GlobalValues, GlobalValueValue } from "@/api/types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Trash2 } from "lucide-react"
 
 interface KvEditorProps {
@@ -11,8 +18,9 @@ interface KvEditorProps {
   readOnly?: boolean
 }
 
+type Entry = [string, GlobalValueValue]
+
 export function KvEditor({ name, data, readOnly = false }: KvEditorProps) {
-  type Entry = [string, string | number | boolean | null]
   const [entries, setEntries] = useState<Entry[]>([])
   const navigate = useNavigate()
 
@@ -28,6 +36,50 @@ export function KvEditor({ name, data, readOnly = false }: KvEditorProps) {
     setEntries((prev) => prev.map((e, i) => (i === index ? [e[0], value] : e)))
   }
 
+  // Switch a row between a scalar string and a list of strings. Converting to a list
+  // seeds it with the current scalar (so nothing is silently lost); converting back to
+  // a string keeps the first item.
+  function handleTypeChange(index: number, type: "string" | "list") {
+    setEntries((prev) =>
+      prev.map((e, i) => {
+        if (i !== index) return e
+        const [k, v] = e
+        if (type === "list") {
+          return Array.isArray(v) ? e : [k, [String(v ?? "")]]
+        }
+        return Array.isArray(v) ? [k, v[0] ?? ""] : e
+      }),
+    )
+  }
+
+  function handleItemChange(index: number, itemIndex: number, value: string) {
+    setEntries((prev) =>
+      prev.map((e, i) =>
+        i === index && Array.isArray(e[1])
+          ? [e[0], e[1].map((it, j) => (j === itemIndex ? value : it))]
+          : e,
+      ),
+    )
+  }
+
+  function handleAddItem(index: number) {
+    setEntries((prev) =>
+      prev.map((e, i) =>
+        i === index && Array.isArray(e[1]) ? [e[0], [...e[1], ""]] : e,
+      ),
+    )
+  }
+
+  function handleRemoveItem(index: number, itemIndex: number) {
+    setEntries((prev) =>
+      prev.map((e, i) =>
+        i === index && Array.isArray(e[1])
+          ? [e[0], e[1].filter((_, j) => j !== itemIndex)]
+          : e,
+      ),
+    )
+  }
+
   function handleDelete(index: number) {
     setEntries((prev) => prev.filter((_, i) => i !== index))
   }
@@ -37,20 +89,26 @@ export function KvEditor({ name, data, readOnly = false }: KvEditorProps) {
     setEntries((prev) => [...prev, [newKey, ""]])
   }
 
-  function entriesToPayload(): Record<string, string | number | boolean | null> {
+  function entriesToPayload(): Record<string, GlobalValueValue> {
     return Object.fromEntries(entries)
   }
 
-  const hasEmpty = entries.some(
-    ([, v]) => v === "" || v === null || v === undefined,
-  )
+  // A row is "empty" (and blocks PR creation) when a scalar is blank/null, or when a
+  // list is empty or contains a blank item.
+  const hasEmpty = entries.some(([, v]) => {
+    if (Array.isArray(v)) {
+      return v.length === 0 || v.some((item) => item.trim() === "")
+    }
+    return v === "" || v === null || v === undefined
+  })
 
   function hasChanges(): boolean {
     const original = Object.entries(data.payload)
     if (entries.length !== original.length) return true
     for (let i = 0; i < entries.length; i++) {
       if (entries[i][0] !== original[i][0]) return true
-      if (String(entries[i][1]) !== String(original[i][1])) return true
+      if (JSON.stringify(entries[i][1]) !== JSON.stringify(original[i][1]))
+        return true
     }
     return false
   }
@@ -66,15 +124,16 @@ export function KvEditor({ name, data, readOnly = false }: KvEditorProps) {
   return (
     <div className="space-y-4">
       <div className="rounded-lg border">
-        <div className="grid grid-cols-[1fr_2fr_auto] gap-2 border-b bg-muted/50 px-4 py-2 text-sm font-medium text-muted-foreground">
+        <div className="grid grid-cols-[1fr_auto_2fr_auto] gap-2 border-b bg-muted/50 px-4 py-2 text-sm font-medium text-muted-foreground">
           <span>Key</span>
+          <span>Type</span>
           <span>Value</span>
           <span />
         </div>
         {entries.map(([key, val], index) => (
           <div
             key={index}
-            className="grid grid-cols-[1fr_2fr_auto] items-center gap-2 border-b px-4 py-2 last:border-0"
+            className="grid grid-cols-[1fr_auto_2fr_auto] items-start gap-2 border-b px-4 py-2 last:border-0"
           >
             <Input
               value={key}
@@ -82,12 +141,67 @@ export function KvEditor({ name, data, readOnly = false }: KvEditorProps) {
               className="font-mono text-sm"
               disabled={readOnly}
             />
-            <Input
-              value={String(val ?? "")}
-              onChange={(e) => handleValueChange(index, e.target.value)}
-              className="font-mono text-sm"
+            <Select
+              value={Array.isArray(val) ? "list" : "string"}
+              onValueChange={(v) =>
+                handleTypeChange(index, v as "string" | "list")
+              }
               disabled={readOnly}
-            />
+            >
+              <SelectTrigger size="sm" className="w-[88px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="string">String</SelectItem>
+                <SelectItem value="list">List</SelectItem>
+              </SelectContent>
+            </Select>
+            {Array.isArray(val) ? (
+              <div className="space-y-1">
+                {val.map((item, itemIndex) => (
+                  <div key={itemIndex} className="flex items-center gap-2">
+                    <Input
+                      value={item}
+                      onChange={(e) =>
+                        handleItemChange(index, itemIndex, e.target.value)
+                      }
+                      className="font-mono text-sm"
+                      disabled={readOnly}
+                    />
+                    {!readOnly && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                        onClick={() => handleRemoveItem(index, itemIndex)}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                {val.length === 0 && (
+                  <p className="text-xs text-muted-foreground">Empty list.</p>
+                )}
+                {!readOnly && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs"
+                    onClick={() => handleAddItem(index)}
+                  >
+                    + Add item
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <Input
+                value={String(val ?? "")}
+                onChange={(e) => handleValueChange(index, e.target.value)}
+                className="font-mono text-sm"
+                disabled={readOnly}
+              />
+            )}
             {!readOnly && (
               <Button
                 variant="ghost"

@@ -19,6 +19,7 @@ const (
 	ErrUnknownKey          RenderErrorKind = "unknown_key"
 	ErrTemplateParse       RenderErrorKind = "template_parse"
 	ErrTemplateExec        RenderErrorKind = "template_exec"
+	ErrNonScalarRef        RenderErrorKind = "non_scalar_ref"
 )
 
 // RenderError is a structured error returned by the rendering pipeline.
@@ -184,7 +185,20 @@ func resolveString(s string, gvMap map[string]map[string]any) (any, *RenderError
 			}
 			return match
 		}
-		return fmt.Sprintf("%v", val)
+		// A list (or object) cannot be spliced into a larger string. Require it to be
+		// referenced on its own — e.g. "${name.key}" — so it resolves to the array.
+		switch val.(type) {
+		case string, float64, bool, nil:
+			return fmt.Sprintf("%v", val)
+		default:
+			firstErr = &RenderError{
+				Kind:             ErrNonScalarRef,
+				GlobalValuesName: name,
+				KeyName:          key,
+				Message:          fmt.Sprintf("global value %q.%q is a list and cannot be embedded in a string; reference it on its own (\"${%s.%s}\")", name, key, name, key),
+			}
+			return match
+		}
 	})
 	if firstErr != nil {
 		return nil, firstErr

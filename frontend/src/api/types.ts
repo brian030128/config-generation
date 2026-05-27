@@ -104,11 +104,15 @@ export interface ProjectConfigValues {
   created_at: string
 }
 
+// A global-value payload value: a scalar, or a list of strings (for templates that
+// `range` over it). See GlobalValueValue for the shared union.
+export type GlobalValueValue = string | number | boolean | null | string[]
+
 export interface GlobalValues {
   id: number
   name: string
   version_id: number
-  payload: Record<string, string | number | boolean | null>
+  payload: Record<string, GlobalValueValue>
   commit_message: string | null
   approval_condition: string
   created_by: number
@@ -209,13 +213,13 @@ export interface AppendProjectConfigValuesVersionRequest {
 
 export interface CreateGlobalValuesRequest {
   name: string
-  payload: Record<string, string | number | boolean | null>
+  payload: Record<string, GlobalValueValue>
   commit_message?: string
   approval_condition?: string
 }
 
 export interface AppendGlobalValuesVersionRequest {
-  payload: Record<string, string | number | boolean | null>
+  payload: Record<string, GlobalValueValue>
   commit_message?: string
 }
 

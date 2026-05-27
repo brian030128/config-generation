@@ -50,11 +50,25 @@ var _ = Describe("Global Values", func() {
 			Expect(rec.Code).To(Equal(http.StatusBadRequest))
 		})
 
-		It("rejects arrays in payload", func() {
+		It("accepts a list of strings", func() {
+			rec := doRequest("POST", "/api/global-values", map[string]any{
+				"name": "net_values",
+				"payload": map[string]any{
+					"hosts": []string{"a.internal", "b.internal"},
+				},
+			}, aliceID, "alice")
+			Expect(rec.Code).To(Equal(http.StatusCreated))
+
+			body := decode[map[string]any](rec)
+			payload := body["payload"].(map[string]any)
+			Expect(payload["hosts"]).To(Equal([]any{"a.internal", "b.internal"}))
+		})
+
+		It("rejects a list containing non-strings", func() {
 			rec := doRequest("POST", "/api/global-values", map[string]any{
 				"name": "bad_values",
 				"payload": map[string]any{
-					"list": []string{"a", "b"},
+					"ports": []any{80, 443},
 				},
 			}, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusBadRequest))

@@ -3,16 +3,24 @@ import { useParams, useLocation, useNavigate, Navigate } from "react-router-dom"
 import { toast } from "sonner"
 import { useGlobalValue } from "@/hooks/use-global-values"
 import { useCreatePullRequest } from "@/hooks/use-pull-requests"
+import type { GlobalValueValue } from "@/api/types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 
+// Render a value for the diff: lists as JSON (e.g. ["a","b"]), scalars as plain text.
+function formatVal(v: GlobalValueValue | undefined): string {
+  if (v === undefined) return "—"
+  if (Array.isArray(v)) return JSON.stringify(v)
+  return String(v)
+}
+
 export default function CreatePRPage() {
   const { name } = useParams<{ name: string }>()
   const location = useLocation()
   const navigate = useNavigate()
-  const proposedPayload = (location.state as { payload?: Record<string, string | number | boolean | null> })?.payload
+  const proposedPayload = (location.state as { payload?: Record<string, GlobalValueValue> })?.payload
   const { data: current } = useGlobalValue(name!)
   const createPR = useCreatePullRequest()
 
@@ -102,7 +110,7 @@ export default function CreatePRPage() {
             const proposedVal = proposedPayload[key]
             const isAdded = currentVal === undefined
             const isRemoved = proposedVal === undefined
-            const isChanged = !isAdded && !isRemoved && String(currentVal) !== String(proposedVal)
+            const isChanged = !isAdded && !isRemoved && formatVal(currentVal) !== formatVal(proposedVal)
             const unchanged = !isAdded && !isRemoved && !isChanged
 
             return (
@@ -120,10 +128,10 @@ export default function CreatePRPage() {
               >
                 <span className="font-medium">{key}</span>
                 <span className={`${unchanged ? "text-muted-foreground" : ""} ${isRemoved ? "line-through text-red-600" : ""}`}>
-                  {currentVal !== undefined ? String(currentVal) : "—"}
+                  {formatVal(currentVal)}
                 </span>
                 <span className={`${unchanged ? "text-muted-foreground" : ""} ${isAdded ? "text-green-600" : isChanged ? "text-yellow-600" : ""}`}>
-                  {proposedVal !== undefined ? String(proposedVal) : "—"}
+                  {formatVal(proposedVal)}
                 </span>
               </div>
             )

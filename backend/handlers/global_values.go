@@ -18,18 +18,26 @@ type GlobalValuesHandler struct {
 	DB *sql.DB
 }
 
-// validateFlatJSON checks that the payload is a flat JSON object (scalars only, no nested objects/arrays).
+// validateFlatJSON checks that the payload is a flat JSON object: each value must be a
+// scalar (string, number, boolean, null) or a list of strings. Nested objects and lists
+// containing anything other than strings are rejected.
 func validateFlatJSON(payload json.RawMessage) error {
 	var m map[string]any
 	if err := json.Unmarshal(payload, &m); err != nil {
 		return fmt.Errorf("payload must be a JSON object")
 	}
 	for key, val := range m {
-		switch val.(type) {
+		switch v := val.(type) {
 		case string, float64, bool, nil:
 			// valid scalar types
+		case []any:
+			for i, el := range v {
+				if _, ok := el.(string); !ok {
+					return fmt.Errorf("key %q list item %d must be a string", key, i)
+				}
+			}
 		default:
-			return fmt.Errorf("key %q has a non-scalar value; only strings, numbers, booleans, and nulls are allowed", key)
+			return fmt.Errorf("key %q must be a string, number, boolean, null, or a list of strings", key)
 		}
 	}
 	return nil
