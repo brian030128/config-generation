@@ -6,6 +6,10 @@ const labelMap: Record<string, string> = {
   projects: "Projects",
   "global-values": "Global Values",
   env: "Environments",
+  templates: "Templates",
+  environments: "Environments",
+  members: "Members",
+  permissions: "Permissions",
 }
 
 export function Breadcrumbs() {
@@ -21,6 +25,12 @@ export function Breadcrumbs() {
 
     // Skip "env" as a standalone breadcrumb segment — use the next segment as label
     if (seg === "env") continue
+
+    // Skip intermediate numeric id segments (e.g. the userId in
+    // /projects/:name/members/:userId/permissions); they have no standalone
+    // route, so linking them would 404. The accumulated path still includes
+    // them for the following (real) crumb.
+    if (/^\d+$/.test(seg) && i < segments.length - 1) continue
 
     const label = labelMap[seg] ?? decodeURIComponent(seg)
     crumbs.push({ label, to: path })

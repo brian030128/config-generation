@@ -24,6 +24,12 @@ const router = createBrowserRouter([
       { index: true, element: <Navigate to="/projects" replace /> },
       { path: "projects", element: <ProjectListPage /> },
       { path: "projects/:name", element: <ProjectPage /> },
+      { path: "projects/:name/templates", element: <ProjectPage tab="templates" /> },
+      {
+        path: "projects/:name/environments",
+        element: <ProjectPage tab="environments" />,
+      },
+      { path: "projects/:name/members", element: <ProjectPage tab="members" /> },
       {
         path: "projects/:name/members/:userId/permissions",
         element: <MemberPermissionsPage />,

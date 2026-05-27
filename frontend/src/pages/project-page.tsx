@@ -7,7 +7,9 @@ import { EnvironmentList } from "@/components/environments/environment-list"
 import { MemberList } from "@/components/projects/member-list"
 import { ArrowUpRight } from "lucide-react"
 
-export default function ProjectPage() {
+type ProjectTab = "templates" | "environments" | "members"
+
+export default function ProjectPage({ tab = "templates" }: { tab?: ProjectTab }) {
   const { name } = useParams<{ name: string }>()
   const { data: project, isLoading, error } = useProject(name!)
   const navigate = useNavigate()
@@ -39,7 +41,16 @@ export default function ProjectPage() {
         </Button>
       </div>
 
-      <Tabs defaultValue="templates">
+      <Tabs
+        value={tab}
+        onValueChange={(v) =>
+          navigate(
+            v === "templates"
+              ? `/projects/${name}`
+              : `/projects/${name}/${v}`,
+          )
+        }
+      >
         <TabsList>
           <TabsTrigger value="templates">Templates</TabsTrigger>
           <TabsTrigger value="environments">Environments</TabsTrigger>
