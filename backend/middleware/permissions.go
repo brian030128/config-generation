@@ -19,10 +19,13 @@ type effectivePermission struct {
 }
 
 // loadEffectivePermissions queries all permission atoms for a user by joining
-// user_roles with role_permissions, plus a read:project atom synthesized from
-// each of the user's project memberships. Membership is the only source of
-// read:project — it is not granted via role_permissions and is not implied by
-// any other project-scoped permission.
+// user_roles with role_permissions, plus atoms synthesized from two membership
+// concepts that are not stored as role_permissions:
+//   - project membership → read:project(p) (the only source of read:project).
+//   - env-admin grants → read:project(p), create:env_values(p, env) and
+//     delete:project_values(p, env) for the granted environment. create implies
+//     write implies read on that env's values (see satisfies), so these three
+//     atoms give full control of the env's value sets plus env deletion.
 func loadEffectivePermissions(ctx context.Context, db *sql.DB, userID int64) ([]effectivePermission, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT rp.action, rp.resource, rp.key_project, rp.key_env, rp.key_name
@@ -34,6 +37,24 @@ func loadEffectivePermissions(ctx context.Context, db *sql.DB, userID int64) ([]
 		FROM project_members pm
 		JOIN projects p ON p.id = pm.project_id
 		WHERE pm.user_id = $1
+		UNION ALL
+		SELECT 'read', 'project', p.name, NULL, NULL
+		FROM env_admins ea
+		JOIN environments e ON e.id = ea.environment_id
+		JOIN projects p ON p.id = e.project_id
+		WHERE ea.user_id = $1
+		UNION ALL
+		SELECT 'create', 'env_values', p.name, e.name, NULL
+		FROM env_admins ea
+		JOIN environments e ON e.id = ea.environment_id
+		JOIN projects p ON p.id = e.project_id
+		WHERE ea.user_id = $1
+		UNION ALL
+		SELECT 'delete', 'project_values', p.name, e.name, NULL
+		FROM env_admins ea
+		JOIN environments e ON e.id = ea.environment_id
+		JOIN projects p ON p.id = e.project_id
+		WHERE ea.user_id = $1
 	`, userID)
 	if err != nil {
 		return nil, err
@@ -83,16 +104,21 @@ func satisfies(granted effectivePermission, req models.PermissionRequirement) bo
 			matchesKey(granted.KeyName, req.KeyName)
 	}
 
-	// create:env_values(project) implies write:project_values(project, *).
+	// create:env_values(project, env) implies write:project_values(project, env).
+	// The env key is matched so an env-scoped create (an env-admin's grant) only
+	// confers write on that env, while a project admin's create:env_values(p, *)
+	// still confers write across every env.
 	if req.Action == models.ActionWrite && req.Resource == models.ResourceProjectValues &&
 		granted.Action == models.ActionCreate && granted.Resource == models.ResourceEnvValues {
-		return matchesKey(granted.KeyProject, req.KeyProject)
+		return matchesKey(granted.KeyProject, req.KeyProject) &&
+			matchesKey(granted.KeyEnv, req.KeyEnv)
 	}
 
-	// create:env_values(project) implies read:project_values(project, *) (transitive via write→read).
+	// create:env_values(project, env) implies read:project_values(project, env) (transitive via write→read).
 	if req.Action == models.ActionRead && req.Resource == models.ResourceProjectValues &&
 		granted.Action == models.ActionCreate && granted.Resource == models.ResourceEnvValues {
-		return matchesKey(granted.KeyProject, req.KeyProject)
+		return matchesKey(granted.KeyProject, req.KeyProject) &&
+			matchesKey(granted.KeyEnv, req.KeyEnv)
 	}
 
 	return false

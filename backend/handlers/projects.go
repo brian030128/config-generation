@@ -71,7 +71,9 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}{
 		{"write", "project_templates", project.Name, ""},
 		{"delete", "project_templates", project.Name, ""},
-		{"create", "env_values", project.Name, ""},
+		// Wildcard env so the admin can create value sets (and new environments)
+		// in every env; env-admins get an env-scoped create:env_values(p, env).
+		{"create", "env_values", project.Name, "*"},
 		{"delete", "project_values", project.Name, "*"},
 		{"delete", "project", project.Name, ""},
 		{"grant", "", project.Name, ""},
@@ -238,6 +240,7 @@ func (h *ProjectHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		// config data and environments
 		`DELETE FROM project_config_values WHERE project_id = $1`,
 		`DELETE FROM project_config_templates WHERE project_id = $1`,
+		`DELETE FROM env_admins WHERE environment_id IN (SELECT id FROM environments WHERE project_id = $1)`,
 		`DELETE FROM environments WHERE project_id = $1`,
 		`DELETE FROM projects WHERE id = $1`,
 	}

@@ -5,6 +5,7 @@ import NotFoundPage from "@/pages/not-found"
 import ProjectListPage from "@/pages/project-list"
 import ProjectPage from "@/pages/project-page"
 import ProjectEnvPage from "@/pages/project-env-page"
+import MemberPermissionsPage from "@/pages/member-permissions-page"
 import GlobalValuesListPage from "@/pages/global-values-list"
 import GlobalValuesDetailPage from "@/pages/global-values-detail"
 import CreatePRPage from "@/pages/create-pr"
@@ -23,6 +24,10 @@ const router = createBrowserRouter([
       { index: true, element: <Navigate to="/projects" replace /> },
       { path: "projects", element: <ProjectListPage /> },
       { path: "projects/:name", element: <ProjectPage /> },
+      {
+        path: "projects/:name/members/:userId/permissions",
+        element: <MemberPermissionsPage />,
+      },
       { path: "projects/:name/env/:env", element: <ProjectEnvPage /> },
       { path: "global-values", element: <GlobalValuesListPage /> },
       { path: "global-values/:name", element: <GlobalValuesDetailPage /> },

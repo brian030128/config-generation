@@ -41,6 +41,16 @@ type ProjectMember struct {
 	AddedAt     time.Time `json:"added_at"`
 }
 
+// EnvAdmin is a user's env-admin grant on a single environment. Mirrors
+// ProjectMember; the synthesized atoms are derived in the permission loader.
+type EnvAdmin struct {
+	UserID      int64     `json:"user_id"`
+	Username    string    `json:"username"`
+	DisplayName *string   `json:"display_name"`
+	GrantedBy   int64     `json:"granted_by"`
+	GrantedAt   time.Time `json:"granted_at"`
+}
+
 type ProjectConfigTemplate struct {
 	ID            int64     `json:"id"`
 	ProjectID     int64     `json:"project_id"`

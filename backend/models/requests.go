@@ -67,6 +67,31 @@ type AddProjectMemberRequest struct {
 	UserID int64 `json:"user_id"`
 }
 
+// MemberPermissions is what a project admin can grant a member. Templates are
+// project-wide (read/write/delete); value access is granted per environment so
+// a member can be given, say, staging but not production. It is both the request
+// body for setting permissions and the response shape for reading them; each
+// enabled capability maps to an atom on the member's auto-managed per-member role.
+type MemberPermissions struct {
+	ReadTemplates   bool             `json:"read_templates"`
+	WriteTemplates  bool             `json:"write_templates"`
+	DeleteTemplates bool             `json:"delete_templates"`
+	Environments    []EnvValueAccess `json:"environments"`
+}
+
+// EnvValueAccess is a member's value access to a single environment.
+// read=true,write=false → "Read only"; write=true → "Read & write" (read is
+// implied). An absent entry (or both false) means "No access".
+type EnvValueAccess struct {
+	Env   string `json:"env"`
+	Read  bool   `json:"read"`
+	Write bool   `json:"write"`
+}
+
+type AddEnvAdminRequest struct {
+	UserID int64 `json:"user_id"`
+}
+
 type RegisterRequest struct {
 	Username    string  `json:"username"`
 	Password    string  `json:"password"`

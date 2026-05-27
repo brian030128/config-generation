@@ -343,10 +343,13 @@ func (h *RoleHandler) ListForProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch roles.
+	// Fetch roles. Per-member managed roles (the backing store for member
+	// permission toggles) are an implementation detail and are hidden here.
 	roleRows, err := h.DB.QueryContext(r.Context(), `
 		SELECT id, name, project_id, global_values_name, is_auto_created, created_at
-		FROM roles WHERE project_id = $1 ORDER BY name
+		FROM roles
+		WHERE project_id = $1 AND NOT starts_with(name, '`+managedMemberRolePrefix+`')
+		ORDER BY name
 	`, projectID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "database error", "internal")

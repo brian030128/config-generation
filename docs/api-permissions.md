@@ -52,7 +52,10 @@ redesign — the gaps in that section and the PR-lifecycle/deploy gaps below are
 - **Composition rules** applied by `satisfies()` in `middleware/permissions.go`:
   - `*` in any key slot is a wildcard, matched per axis.
   - `write` implies `read` on the same resource.
-  - `create:env_values(P)` implies `write:project_values(P, *)` (and thus read).
+  - `create:env_values(P, E)` implies `write:project_values(P, E)` (and thus read).
+    The env key is matched, so a project admin's `create:env_values(P, *)` implies
+    write across every env, while an env-admin's `create:env_values(P, E)` is confined
+    to env `E`.
 - **Superuser bypass** — users with `users.superuser = true` (seeded admin and
   `OIDC_SUPERUSER_EMAILS`) pass every Route-MW and `CheckPermission` check. They are
   **not** exempt from direct author-ID checks (PR merge/submit).
@@ -127,6 +130,37 @@ sole `project_admin:<p>` member is refused. Membership logic lives in
 | GET | `/api/projects/{p}/members` | `read:project(p)` | Route MW: `read:project(p)` | ✅ |
 | POST | `/api/projects/{p}/members` | `grant(p)` | Route MW: `grant(p)` | ✅ |
 | DELETE | `/api/projects/{p}/members/{userID}` | `grant(p)`; sole `project_admin` undeletable | Route MW: `grant(p)` + in-handler last-admin guard | ✅ |
+| GET | `/api/projects/{p}/members/{userID}/permissions` | `grant(p)` | Route MW: `grant(p)` | ✅ |
+| PUT | `/api/projects/{p}/members/{userID}/permissions` | `grant(p)`; target must be a member | Route MW: `grant(p)` + in-handler membership check | ✅ |
+
+### Per-member permissions
+
+A project admin grants a member fine-grained capabilities (edited on a dedicated page,
+`frontend/src/pages/member-permissions-page.tsx`) without touching the raw role model.
+Capabilities map to permission atoms on an **auto-managed, per-member role** named
+`__member__:<p>:<userID>` (hidden from the roles listing; edited only through these
+endpoints, in `handlers/member_permissions.go`).
+
+Templates are **project-wide**:
+
+| Capability | Atom written |
+|---|---|
+| `read_templates` | `read:project_templates(p)` |
+| `write_templates` | `write:project_templates(p)` |
+| `delete_templates` | `delete:project_templates(p)` |
+
+Value access is granted **per environment** (`environments: [{ env, read, write }]`), so a
+member can be given, e.g., `staging` but not `production` — read and write are independent:
+
+| Per-env level | Atoms written for env `e` |
+|---|---|
+| Read only (`read`) | `read:project_values(p, e)` |
+| Read & write (`write`) | `write:project_values(p, e)` + `create:env_values(p, e)` (edit + bootstrap that env; read implied; does not allow creating new environments) |
+
+The request/response body is `{ read_templates, write_templates, delete_templates,
+environments: [{ env, read, write }] }`. `PUT` validates each `env` exists (unknown →
+`400`), replaces the member's full atom set, and ensures the `user_roles` assignment; `GET`
+reconstructs the capabilities (returning only the envs that have a grant).
 
 The `GET …/members` response also carries a `viewer_can_manage` boolean — whether the caller
 holds `grant(p)`, computed in-handler via `middleware.CheckPermission` (superusers included).
@@ -207,9 +241,38 @@ not performed directly — environments are no longer excluded from PRs.
 | GET | `/api/projects/{p}/environments` | `read:project_templates(p)` (project read) | None — any authenticated user | ⚠️ |
 | GET | `/api/projects/{p}/environments/{e}` | `read:project_templates(p)` (project read) | None — any authenticated user | ⚠️ |
 
-Environments are non-versioned. Creation requires `create:env_values(p)`; deletion (which
-cascades to the env's value sets) requires `delete:project_values(p, *)` — both staged in the
-workspace. See the Workspace section.
+Environments are non-versioned. Creating a **new** environment requires
+`create:env_values(p, *)` (the wildcard env key — only project admins, not env-admins).
+Deleting env `E` (which cascades to its value sets and env-admin grants) requires
+`delete:project_values(p, E)` — both staged in the workspace. See the Workspace section.
+
+**Listing is deliberately independent of value-read access.** An environment's *existence*
+is project metadata, so any project member sees every environment in the list; being able
+to read an environment's **values** is gated separately by `read:project_values(p, e)`. A
+member granted, say, `staging` but not `production` still sees both environments listed but
+can only open `staging`'s values. The frontend env list (`components/environments/environment-list.tsx`)
+reflects this: it lists every environment and labels one whose values return `403` as
+**"restricted"** (rather than the misleading "not configured").
+
+### Environment admins
+
+Each environment has a set of **env-admins** (`env_admins` table). An env-admin of env `E`
+holds, via atoms synthesized in `middleware/permissions.go` (mirroring how membership
+synthesizes `read:project`): `read:project(p)`, `create:env_values(p, E)`, and
+`delete:project_values(p, E)`. That confers full control of `E`'s value sets
+(create/read/write/delete) and the ability to delete `E`, but **not** template authoring
+or creating new environments. The env's creator becomes its first env-admin at merge
+(`handlers/pull_requests.go`); env-admin grants are also self-propagating.
+
+| Method | Path | Expected enforcement | Current implementation | Status |
+|---|---|---|---|---|
+| GET | `/api/projects/{p}/environments/{e}/admins` | `read:project(p)` | Route MW: `read:project(p)` | ✅ |
+| POST | `/api/projects/{p}/environments/{e}/admins` | superuser, `grant(p)`, or env-admin of `e` | In-handler check | ✅ |
+| DELETE | `/api/projects/{p}/environments/{e}/admins/{userID}` | superuser, `grant(p)`, or env-admin of `e`; sole admin undeletable | In-handler check + last-admin guard | ✅ |
+
+Add/remove authorization is in-handler because env-scoped self-propagation (an env-admin
+granting env-admin) is not expressible as route middleware. Logic lives in
+`handlers/env_admins.go`.
 
 ---
 
@@ -324,9 +387,9 @@ enforcement* column states (`router.go`), with two in-handler refinements:
 | POST | `/api/workspace/{p}/templates` | `write:project_templates(p)` | Stage a new template. Body `{ template_name, body, commit_message? }`. |
 | PUT | `/api/workspace/{p}/templates/{t}` | `write:project_templates(p)` | Stage an edit to a template body. Body `{ body, commit_message? }`. |
 | DELETE | `/api/workspace/{p}/templates/{t}` | `delete:project_templates(p)` *(new atom)* | Stage deletion of a template. |
-| POST | `/api/workspace/{p}/environments` | `create:env_values(p)` | Stage a new environment. Body `{ name, description? }`. |
-| DELETE | `/api/workspace/{p}/environments/{e}` | `delete:project_values(p, *)` | Stage deletion of an environment (cascades to its value sets). |
-| PUT | `/api/workspace/{p}/envs/{e}/values` | `create:env_values(p)` if no live set exists, else `write:project_values(p, e)` | Stage create-or-update of an env's value set. Body `{ payload, commit_message? }`. |
+| POST | `/api/workspace/{p}/environments` | `create:env_values(p, *)` (wildcard env — project admins only) | Stage a new environment. Body `{ name, description? }`. |
+| DELETE | `/api/workspace/{p}/environments/{e}` | `delete:project_values(p, e)` | Stage deletion of an environment (cascades to its value sets). An env-admin's env-scoped delete satisfies this for their env. |
+| PUT | `/api/workspace/{p}/envs/{e}/values` | `create:env_values(p, e)` if no live set exists, else `write:project_values(p, e)` | Stage create-or-update of an env's value set. Body `{ payload, commit_message? }`. |
 | DELETE | `/api/workspace/{p}/envs/{e}/values` | `delete:project_values(p, e)` | Stage deletion of an env's value set. |
 
 ### Change set / unstage

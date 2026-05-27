@@ -6,6 +6,7 @@ import type {
   ProjectMember,
   ProjectMembersResponse,
   AddProjectMemberRequest,
+  MemberPermissions,
 } from "./types"
 
 export const projectsApi = {
@@ -34,4 +35,21 @@ export const projectsApi = {
 
   removeMember: (name: string, userId: number) =>
     client.delete(`/projects/${name}/members/${userId}`),
+
+  getMemberPermissions: (name: string, userId: number) =>
+    client
+      .get<MemberPermissions>(`/projects/${name}/members/${userId}/permissions`)
+      .then((r) => r.data),
+
+  setMemberPermissions: (
+    name: string,
+    userId: number,
+    perms: MemberPermissions,
+  ) =>
+    client
+      .put<MemberPermissions>(
+        `/projects/${name}/members/${userId}/permissions`,
+        perms,
+      )
+      .then((r) => r.data),
 }

@@ -38,21 +38,30 @@ export function EnvironmentList({
         .filter((e) => !environments.some((env) => env.name === e.name))
     : []
 
-  // For each existing environment, check if it has values
+  // For each existing environment, check if it has values. A 403 here means the
+  // caller lacks read access to that env's values — the environment is still
+  // listed, just shown as "restricted" rather than a misleading "not configured".
   const valueQueries = useQueries({
     queries: environments.map((env) => ({
       queryKey: ["projects", projectName, "envs", env.name, "values"] as const,
       queryFn: () => valuesApi.getLatest(projectName, env.name),
       enabled: environments.length > 0,
+      retry: false,
     })),
   })
 
-  const envsWithStatus = environments.map((env, i) => ({
-    env,
-    hasValues: valueQueries[i]?.isSuccess ?? false,
-    isLoading: valueQueries[i]?.isLoading ?? true,
-    staged: false,
-  }))
+  const envsWithStatus = environments.map((env, i) => {
+    const q = valueQueries[i]
+    const status = (q?.error as { response?: { status?: number } } | undefined)
+      ?.response?.status
+    return {
+      env,
+      hasValues: q?.isSuccess ?? false,
+      restricted: status === 403,
+      isLoading: q?.isLoading ?? true,
+      staged: false,
+    }
+  })
 
   const allEnvs = [
     ...envsWithStatus,
@@ -66,6 +75,7 @@ export function EnvironmentList({
         created_at: "",
       },
       hasValues: false,
+      restricted: false,
       isLoading: false,
       staged: true,
     })),
@@ -103,7 +113,7 @@ export function EnvironmentList({
       )}
 
       <div className="space-y-2">
-        {allEnvs.map(({ env, hasValues, isLoading, staged }) => (
+        {allEnvs.map(({ env, hasValues, restricted, isLoading, staged }) => (
           <Link
             key={env.name}
             to={
@@ -120,7 +130,11 @@ export function EnvironmentList({
               )}
               {!staged && !isLoading && (
                 <span className="text-xs text-muted-foreground">
-                  {hasValues ? "configured" : "not configured"}
+                  {restricted
+                    ? "restricted"
+                    : hasValues
+                      ? "configured"
+                      : "not configured"}
                 </span>
               )}
             </div>

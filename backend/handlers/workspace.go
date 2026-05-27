@@ -301,6 +301,7 @@ func (h *PullRequestHandler) StageValuesUpsert(w http.ResponseWriter, r *http.Re
 			Action:     models.ActionCreate,
 			Resource:   models.ResourceEnvValues,
 			KeyProject: projectName,
+			KeyEnv:     envName,
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to check permissions", "internal")

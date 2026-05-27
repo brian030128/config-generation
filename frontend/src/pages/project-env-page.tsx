@@ -1,6 +1,8 @@
 import { useParams } from "react-router-dom"
 import { useValues } from "@/hooks/use-values"
 import { ValuesEditor } from "@/components/values/values-editor"
+import { EnvAdminList } from "@/components/environments/env-admin-list"
+import { Separator } from "@/components/ui/separator"
 
 export default function ProjectEnvPage() {
   const { name: projectName, env: envName } = useParams<{
@@ -40,6 +42,10 @@ export default function ProjectEnvPage() {
         envName={envName!}
         values={valuesError ? null : (values ?? null)}
       />
+
+      <Separator />
+
+      <EnvAdminList projectName={projectName!} envName={envName!} />
     </div>
   )
 }

@@ -54,6 +54,7 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 	pm := &ProjectMemberHandler{DB: db}
 	users := &UserHandler{DB: db}
 	env := &EnvironmentHandler{DB: db}
+	envadm := &EnvAdminHandler{DB: db}
 	tmpl := &TemplateHandler{DB: db}
 	vals := &ValuesHandler{DB: db}
 	gv := &GlobalValuesHandler{DB: db}
@@ -94,6 +95,13 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 							Post("/", pm.AddMember)
 						r.With(perm(db, "grant", "", param("projectName"), nil, nil)).
 							Delete("/{userID}", pm.RemoveMember)
+
+						// Per-member capability toggles (project admin grants
+						// fine-grained permissions to a member).
+						r.With(perm(db, "grant", "", param("projectName"), nil, nil)).
+							Get("/{userID}/permissions", pm.GetMemberPermissions)
+						r.With(perm(db, "grant", "", param("projectName"), nil, nil)).
+							Put("/{userID}/permissions", pm.SetMemberPermissions)
 					})
 
 					// --- Templates ---
@@ -145,6 +153,16 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 					r.Route("/environments", func(r chi.Router) {
 						r.Get("/", env.List)
 						r.Get("/{envName}", env.Get)
+
+						// --- Env admins (env owner grants env-admin) ---
+						// Listing needs read:project; add/remove auth is
+						// in-handler (superuser, project admin, or env-admin).
+						r.Route("/{envName}/admins", func(r chi.Router) {
+							r.With(perm(db, "read", "project", param("projectName"), nil, nil)).
+								Get("/", envadm.List)
+							r.Post("/", envadm.Add)
+							r.Delete("/{userID}", envadm.Remove)
+						})
 					})
 
 					// --- Roles (project-scoped) ---
@@ -213,10 +231,14 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 				r.With(perm(db, "delete", "project_templates", param("projectName"), nil, nil)).
 					Delete("/templates/{templateName}", pr.StageTemplateDelete)
 
-				// Environments (delete needs the project-wide values delete grant)
-				r.With(perm(db, "create", "env_values", param("projectName"), nil, nil)).
+				// Environments. Creating a *new* environment requires a wildcard
+				// create:env_values(p, *) — only project admins, not env-admins
+				// (whose create atom is scoped to a single existing env). Deleting
+				// env X needs delete:project_values(p, X) — the admin's wildcard
+				// matches, and an env-admin's env-scoped delete matches their env.
+				r.With(perm(db, "create", "env_values", param("projectName"), middleware.Static("*"), nil)).
 					Post("/environments", pr.StageEnvironmentCreate)
-				r.With(perm(db, "delete", "project_values", param("projectName"), middleware.Static("*"), nil)).
+				r.With(perm(db, "delete", "project_values", param("projectName"), param("envName"), nil)).
 					Delete("/environments/{envName}", pr.StageEnvironmentDelete)
 
 				// Values (upsert gated by write; creating a brand-new set additionally

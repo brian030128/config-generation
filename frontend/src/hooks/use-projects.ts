@@ -1,11 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { projectsApi } from "@/api/projects"
-import type { CreateProjectRequest } from "@/api/types"
+import type { CreateProjectRequest, MemberPermissions } from "@/api/types"
 
 export const projectKeys = {
   all: ["projects"] as const,
   detail: (name: string) => ["projects", name] as const,
   members: (name: string) => ["projects", name, "members"] as const,
+  memberPermissions: (name: string, userId: number) =>
+    ["projects", name, "members", userId, "permissions"] as const,
 }
 
 export function useProjects() {
@@ -59,5 +61,25 @@ export function useRemoveProjectMember(name: string) {
   return useMutation({
     mutationFn: (userId: number) => projectsApi.removeMember(name, userId),
     onSuccess: () => qc.invalidateQueries({ queryKey: projectKeys.members(name) }),
+  })
+}
+
+export function useMemberPermissions(name: string, userId: number, enabled = true) {
+  return useQuery({
+    queryKey: projectKeys.memberPermissions(name, userId),
+    queryFn: () => projectsApi.getMemberPermissions(name, userId),
+    enabled: !!name && !!userId && enabled,
+  })
+}
+
+export function useSetMemberPermissions(name: string, userId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (perms: MemberPermissions) =>
+      projectsApi.setMemberPermissions(name, userId, perms),
+    onSuccess: () =>
+      qc.invalidateQueries({
+        queryKey: projectKeys.memberPermissions(name, userId),
+      }),
   })
 }

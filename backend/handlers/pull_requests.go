@@ -620,12 +620,19 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				if c.Operation == "delete" {
-					// Tear down the env's value sets first (FK), then the env itself.
+					// Tear down the env's value sets and env-admin grants first
+					// (FK), then the env itself.
+					envSubquery := `(SELECT id FROM environments WHERE project_id = $1 AND name = $2)`
 					if _, err = tx.ExecContext(r.Context(), `
 						DELETE FROM project_config_values
-						WHERE project_id = $1 AND environment_id =
-							(SELECT id FROM environments WHERE project_id = $1 AND name = $2)
-					`, *c.ProjectID, *c.EnvironmentName); err != nil {
+						WHERE project_id = $1 AND environment_id = `+envSubquery,
+						*c.ProjectID, *c.EnvironmentName); err != nil {
+						writeError(w, http.StatusInternalServerError, "failed to apply change", "internal")
+						return
+					}
+					if _, err = tx.ExecContext(r.Context(), `
+						DELETE FROM env_admins WHERE environment_id = `+envSubquery,
+						*c.ProjectID, *c.EnvironmentName); err != nil {
 						writeError(w, http.StatusInternalServerError, "failed to apply change", "internal")
 						return
 					}
@@ -638,11 +645,22 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 				if jsonErr := json.Unmarshal([]byte(c.ProposedPayload), &envReq); jsonErr != nil {
 					continue
 				}
-				_, err = tx.ExecContext(r.Context(), `
+				if _, err = tx.ExecContext(r.Context(), `
 					INSERT INTO environments (project_id, name, description, created_by)
 					VALUES ($1, $2, $3, $4)
 					ON CONFLICT (project_id, name) DO NOTHING
-				`, *c.ProjectID, envReq.Name, envReq.Description, pr.AuthorID)
+				`, *c.ProjectID, envReq.Name, envReq.Description, pr.AuthorID); err != nil {
+					writeError(w, http.StatusInternalServerError, "failed to apply change", "internal")
+					return
+				}
+				// Seed the creator as the environment's first env-admin. Resolving
+				// the id via SELECT handles the ON CONFLICT DO NOTHING case (env
+				// already existed); the env_admins upsert is then a no-op too.
+				_, err = tx.ExecContext(r.Context(), `
+					INSERT INTO env_admins (environment_id, user_id, granted_by)
+					SELECT id, $3, $3 FROM environments WHERE project_id = $1 AND name = $2
+					ON CONFLICT (environment_id, user_id) DO NOTHING
+				`, *c.ProjectID, envReq.Name, pr.AuthorID)
 
 			case "global_values":
 				if c.GlobalValuesName == nil {

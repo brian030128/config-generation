@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { Link } from "react-router-dom"
 import { toast } from "sonner"
 import type { ProjectMember } from "@/api/types"
 import { useProjectMembers, useRemoveProjectMember } from "@/hooks/use-projects"
@@ -15,7 +16,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { AddMemberDialog } from "./add-member-dialog"
-import { Trash2, Users } from "lucide-react"
+import { SlidersHorizontal, Trash2, Users } from "lucide-react"
 
 export function MemberList({ projectName }: { projectName: string }) {
   const { data, isLoading, error } = useProjectMembers(projectName)
@@ -87,7 +88,21 @@ export function MemberList({ projectName }: { projectName: string }) {
                 added {formatRelativeTime(member.added_at)}
               </span>
               {canManage && (
-                <RemoveMemberButton projectName={projectName} member={member} />
+                <>
+                  <Button
+                    asChild
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Edit permissions for ${member.display_name || member.username}`}
+                  >
+                    <Link
+                      to={`/projects/${projectName}/members/${member.user_id}/permissions`}
+                    >
+                      <SlidersHorizontal />
+                    </Link>
+                  </Button>
+                  <RemoveMemberButton projectName={projectName} member={member} />
+                </>
               )}
             </div>
           </div>

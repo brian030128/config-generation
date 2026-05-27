@@ -52,6 +52,36 @@ export interface ProjectMembersResponse {
   viewer_can_manage: boolean
 }
 
+// What a project admin can grant a member. Templates are project-wide; value
+// access is granted per environment so a member can get staging but not prod.
+export interface MemberPermissions {
+  read_templates: boolean
+  write_templates: boolean
+  delete_templates: boolean
+  environments: EnvValueAccess[]
+}
+
+// A member's value access to one environment. read only → "Read only";
+// write → "Read & write" (read implied). Absent/both false → "No access".
+export interface EnvValueAccess {
+  env: string
+  read: boolean
+  write: boolean
+}
+
+// An env-admin grant on a single environment.
+export interface EnvAdmin {
+  user_id: number
+  username: string
+  display_name: string | null
+  granted_by: number
+  granted_at: string
+}
+
+export interface AddEnvAdminRequest {
+  user_id: number
+}
+
 export interface ProjectConfigTemplate {
   id: number
   project_id: number
