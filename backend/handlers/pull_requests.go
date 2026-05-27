@@ -195,28 +195,15 @@ func (h *PullRequestHandler) checkApprovalConditionMet(ctx context.Context, pr *
 		return true, nil
 	}
 
-	// Determine the scope for roles.
-	var scopeFilter string
-	var scopeArgs []any
-
-	if pr.GlobalValuesName != nil {
-		scopeFilter = "r.global_values_name = $1"
-		scopeArgs = append(scopeArgs, *pr.GlobalValuesName)
-	} else if pr.ProjectID != nil {
-		scopeFilter = "r.project_id = $1"
-		scopeArgs = append(scopeArgs, *pr.ProjectID)
-	} else {
-		return false, nil
-	}
-
-	// For each approver, find their roles.
+	// Roles are global; an approver satisfies a requirement by holding a role
+	// whose name exactly matches it (role names are globally unique).
 	approverRoles := make(map[int64][]string)
 	for _, a := range approvals {
 		rows, err := h.DB.QueryContext(ctx,
 			`SELECT r.name FROM roles r
 			 JOIN user_roles ur ON ur.role_id = r.id
-			 WHERE ur.user_id = $2 AND `+scopeFilter,
-			scopeArgs[0], a.UserID)
+			 WHERE ur.user_id = $1`,
+			a.UserID)
 		if err != nil {
 			return false, err
 		}
@@ -233,43 +220,39 @@ func (h *PullRequestHandler) checkApprovalConditionMet(ctx context.Context, pr *
 		approverRoles[a.UserID] = roles
 	}
 
-	// Check if each requirement is satisfied.
-	// Use AND semantics: all requirements must be met.
+	holds := func(userRoles []string, reqName string) bool {
+		for _, r := range userRoles {
+			if r == reqName {
+				return true
+			}
+		}
+		return false
+	}
+	countApprovers := func(reqName string) int {
+		n := 0
+		for _, roles := range approverRoles {
+			if holds(roles, reqName) {
+				n++
+			}
+		}
+		return n
+	}
+
+	// AND semantics: all requirements must be met (the default and for a single
+	// requirement). OR: at least one.
 	isAnd := strings.Contains(strings.ToUpper(condition), "AND") || len(reqs) == 1
 
 	if isAnd {
 		for _, req := range reqs {
-			count := 0
-			for _, roles := range approverRoles {
-				for _, r := range roles {
-					// Match role name: the role name in the condition may be just the
-					// base name (e.g., "gv_group_admin"), but the actual role name
-					// includes the scope suffix (e.g., "gv_group_admin:test_db_values").
-					if r == req.RoleName || strings.HasPrefix(r, req.RoleName+":") {
-						count++
-						break
-					}
-				}
-			}
-			if count < req.Count {
+			if countApprovers(req.RoleName) < req.Count {
 				return false, nil
 			}
 		}
 		return true, nil
 	}
 
-	// OR semantics: at least one requirement must be met.
 	for _, req := range reqs {
-		count := 0
-		for _, roles := range approverRoles {
-			for _, r := range roles {
-				if r == req.RoleName || strings.HasPrefix(r, req.RoleName+":") {
-					count++
-					break
-				}
-			}
-		}
-		if count >= req.Count {
+		if countApprovers(req.RoleName) >= req.Count {
 			return true, nil
 		}
 	}

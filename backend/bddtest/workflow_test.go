@@ -107,8 +107,8 @@ var _ = Describe("Multi-Project Workflow", func() {
 			}, bobID, "bob")
 			Expect(rec.Code).To(Equal(http.StatusOK))
 
-			By("bob CANNOT create roles or delete either project")
-			rec = doRequest("POST", "/api/projects/billing-service/roles", map[string]any{"name": "rogue"}, bobID, "bob")
+			By("bob CANNOT create roles (superuser-only) or delete either project")
+			rec = doRequest("POST", "/api/roles", map[string]any{"name": "rogue"}, bobID, "bob")
 			Expect(rec.Code).To(Equal(http.StatusForbidden))
 			rec = doRequest("DELETE", "/api/projects/payments-service", nil, bobID, "bob")
 			Expect(rec.Code).To(Equal(http.StatusForbidden))

@@ -63,6 +63,12 @@ type AssignUserRoleRequest struct {
 	UserID int64 `json:"user_id"`
 }
 
+// UpdateApprovalConditionRequest changes the PR-approval condition for a project
+// or global values entry after creation.
+type UpdateApprovalConditionRequest struct {
+	ApprovalCondition string `json:"approval_condition"`
+}
+
 type AddProjectMemberRequest struct {
 	UserID int64 `json:"user_id"`
 }

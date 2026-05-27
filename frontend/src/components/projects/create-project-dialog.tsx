@@ -2,6 +2,7 @@ import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 import { useCreateProject } from "@/hooks/use-projects"
+import { validateApprovalCondition } from "@/lib/approval-condition"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -19,19 +20,30 @@ export function CreateProjectDialog() {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
-  const [approvalCondition, setApprovalCondition] = useState("1 x project_admin")
+  const [approvalCondition, setApprovalCondition] = useState("")
   const navigate = useNavigate()
   const createProject = useCreateProject()
+
+  // The project's admin role "<name>_project_admin" is auto-created; it's the
+  // only role that exists at creation. Left blank, the condition defaults to
+  // "1 x <name>_project_admin"; a custom condition may only reference that role
+  // (other approver roles are created on the Roles page later, then referenced).
+  const adminRole = `${name.trim()}_project_admin`
+  const approvalValidation = validateApprovalCondition(
+    approvalCondition.trim() || `1 x ${adminRole}`,
+    [],
+    [adminRole],
+  )
 
   function reset() {
     setName("")
     setDescription("")
-    setApprovalCondition("1 x project_admin")
+    setApprovalCondition("")
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!name.trim()) return
+    if (!name.trim() || !approvalValidation.valid) return
     createProject.mutate(
       {
         name: name.trim(),
@@ -93,8 +105,20 @@ export function CreateProjectDialog() {
               id="proj-approval"
               value={approvalCondition}
               onChange={(e) => setApprovalCondition(e.target.value)}
-              placeholder="1 x project_admin"
+              placeholder={name.trim() ? `1 x ${adminRole}` : "1 x <name>_project_admin"}
             />
+            {approvalValidation.valid ? (
+              <p className="text-xs text-muted-foreground">
+                Defaults to <code>1 x {adminRole}</code>. Add other approver
+                roles on the Roles page later, then update this condition.
+              </p>
+            ) : (
+              <ul className="space-y-0.5 text-xs text-destructive">
+                {approvalValidation.errors.map((e) => (
+                  <li key={e}>{e}</li>
+                ))}
+              </ul>
+            )}
           </div>
           <div className="flex justify-end gap-2">
             <Button
@@ -104,7 +128,10 @@ export function CreateProjectDialog() {
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={createProject.isPending}>
+            <Button
+              type="submit"
+              disabled={createProject.isPending || !approvalValidation.valid}
+            >
               {createProject.isPending ? "Creating..." : "Create"}
             </Button>
           </div>

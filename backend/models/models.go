@@ -84,15 +84,16 @@ type GlobalValues struct {
 	CreatedAt         time.Time       `json:"created_at"`
 }
 
+// Role is a global, named bundle of permission atoms. Its scope comes only from
+// the atoms' keys (key_project/key_env/key_name); the role itself is not bound to
+// any project or global values entry.
 type Role struct {
-	ID               int64            `json:"id"`
-	Name             string           `json:"name"`
-	ProjectID        *int64           `json:"project_id"`
-	GlobalValuesName *string          `json:"global_values_name"`
-	IsAutoCreated    bool             `json:"is_auto_created"`
-	CreatedAt        time.Time        `json:"created_at"`
-	Permissions      []RolePermission `json:"permissions,omitempty"`
-	Members          []UserRole       `json:"members,omitempty"`
+	ID            int64            `json:"id"`
+	Name          string           `json:"name"`
+	IsAutoCreated bool             `json:"is_auto_created"`
+	CreatedAt     time.Time        `json:"created_at"`
+	Permissions   []RolePermission `json:"permissions,omitempty"`
+	Members       []UserRole       `json:"members,omitempty"`
 }
 
 type RolePermission struct {
@@ -111,6 +112,10 @@ type UserRole struct {
 	RoleID    int64     `json:"role_id"`
 	GrantedBy int64     `json:"granted_by"`
 	GrantedAt time.Time `json:"granted_at"`
+	// Username and DisplayName are populated only by the role-list endpoints
+	// (joined from users) so the UI can render assigned members by name.
+	Username    string  `json:"username,omitempty"`
+	DisplayName *string `json:"display_name,omitempty"`
 }
 
 type PullRequest struct {

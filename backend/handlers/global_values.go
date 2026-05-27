@@ -3,10 +3,13 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
+	"github.com/brian/config-generation/backend/middleware"
 	"github.com/brian/config-generation/backend/models"
 	"github.com/go-chi/chi/v5"
 )
@@ -53,6 +56,24 @@ func (h *GlobalValuesHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Roles are global; an entry's auto-created admin role is named
+	// "<name>_gv_group_admin". The condition defaults to requiring it and, at
+	// creation, may only reference it.
+	adminRoleName := req.Name + "_gv_group_admin"
+	cond := "1 x " + adminRoleName
+	if req.ApprovalCondition != nil {
+		cond = *req.ApprovalCondition
+	}
+	if err := validateApprovalCondition(r.Context(), h.DB, []string{adminRoleName}, cond); err != nil {
+		var vErr *approvalConditionError
+		if errors.As(err, &vErr) {
+			writeError(w, http.StatusBadRequest, vErr.msg, "validation")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "database error", "internal")
@@ -64,9 +85,9 @@ func (h *GlobalValuesHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var gv models.GlobalValues
 	err = tx.QueryRowContext(r.Context(), `
 		INSERT INTO global_values (name, version_id, payload, commit_message, approval_condition, created_by)
-		VALUES ($1, 1, $2, $3, COALESCE($4, '1 x gv_group_admin'), $5)
+		VALUES ($1, 1, $2, $3, $4, $5)
 		RETURNING id, name, version_id, payload, commit_message, approval_condition, created_by, created_at
-	`, req.Name, req.Payload, req.CommitMessage, req.ApprovalCondition, user.UserID).Scan(
+	`, req.Name, req.Payload, req.CommitMessage, cond, user.UserID).Scan(
 		&gv.ID, &gv.Name, &gv.VersionID, &gv.Payload,
 		&gv.CommitMessage, &gv.ApprovalCondition, &gv.CreatedBy, &gv.CreatedAt,
 	)
@@ -79,13 +100,12 @@ func (h *GlobalValuesHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Auto-create gv_group_admin role.
-	roleName := "gv_group_admin:" + gv.Name
+	// 2. Auto-create the entry's admin role (global; scope comes from its atoms).
 	var roleID int64
 	err = tx.QueryRowContext(r.Context(), `
-		INSERT INTO roles (name, global_values_name, is_auto_created) VALUES ($1, $2, true)
+		INSERT INTO roles (name, is_auto_created) VALUES ($1, true)
 		RETURNING id
-	`, roleName, gv.Name).Scan(&roleID)
+	`, adminRoleName).Scan(&roleID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create admin role", "internal")
 		return
@@ -194,6 +214,60 @@ func (h *GlobalValuesHandler) AppendVersion(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusCreated, gv)
 }
 
+// UpdateApprovalCondition changes a global values entry's PR-approval condition.
+// The condition must be parseable and may only reference roles that exist in the
+// entry's scope (plus the built-in gv_group_admin). It is stored on every version
+// row (the evaluator reads v1), so all rows for the name are updated.
+func (h *GlobalValuesHandler) UpdateApprovalCondition(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	var exists bool
+	err := h.DB.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM global_values WHERE name = $1)`, name).Scan(&exists)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+	if !exists {
+		writeError(w, http.StatusNotFound, "global values entry not found", "not_found")
+		return
+	}
+
+	var req models.UpdateApprovalConditionRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body", "bad_request")
+		return
+	}
+
+	if err := validateApprovalCondition(r.Context(), h.DB, []string{name + "_gv_group_admin"}, req.ApprovalCondition); err != nil {
+		var vErr *approvalConditionError
+		if errors.As(err, &vErr) {
+			writeError(w, http.StatusBadRequest, vErr.msg, "validation")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+
+	if _, err = h.DB.ExecContext(r.Context(), `
+		UPDATE global_values SET approval_condition = $1 WHERE name = $2
+	`, strings.TrimSpace(req.ApprovalCondition), name); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update approval condition", "internal")
+		return
+	}
+
+	var gv models.GlobalValues
+	err = h.DB.QueryRowContext(r.Context(), `
+		SELECT id, name, version_id, payload, commit_message, approval_condition, created_by, created_at
+		FROM global_values WHERE name = $1 ORDER BY version_id DESC LIMIT 1
+	`, name).Scan(&gv.ID, &gv.Name, &gv.VersionID, &gv.Payload, &gv.CommitMessage, &gv.ApprovalCondition, &gv.CreatedBy, &gv.CreatedAt)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, gv)
+}
+
 func (h *GlobalValuesHandler) GetLatest(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
@@ -216,7 +290,18 @@ func (h *GlobalValuesHandler) GetLatest(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, gv)
+	// ViewerCanManage gates the approval-policy editor in the UI: grant on the entry.
+	canManage, err := middleware.CheckPermission(r.Context(), h.DB, currentUser(r).UserID, models.PermissionRequirement{
+		Action:   models.ActionGrant,
+		Resource: models.ResourceGlobalValues,
+		KeyName:  name,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "permission check failed", "internal")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, models.GlobalValuesDetailResponse{GlobalValues: gv, ViewerCanManage: canManage})
 }
 
 func (h *GlobalValuesHandler) GetVersion(w http.ResponseWriter, r *http.Request) {

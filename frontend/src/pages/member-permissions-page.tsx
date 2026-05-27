@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom"
 import { toast } from "sonner"
 import { ArrowLeft } from "lucide-react"
 import type { MemberPermissions } from "@/api/types"
+import type { EnvLevel, TemplateCaps } from "@/lib/role-permissions"
 import {
   useMemberPermissions,
   useProjectMembers,
@@ -11,45 +12,7 @@ import {
 import { useEnvironments } from "@/hooks/use-environments"
 import { getApiErrorMessage } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-
-type EnvLevel = "none" | "read" | "write"
-
-const TEMPLATE_CAPS: {
-  key: "read_templates" | "write_templates" | "delete_templates"
-  label: string
-  description: string
-}[] = [
-  {
-    key: "read_templates",
-    label: "Read templates",
-    description: "View templates and their version history.",
-  },
-  {
-    key: "write_templates",
-    label: "Write templates",
-    description: "Create and edit templates (implies read).",
-  },
-  {
-    key: "delete_templates",
-    label: "Delete templates",
-    description: "Delete templates and their history.",
-  },
-]
+import { CapabilityEditor } from "@/components/permissions/capability-editor"
 
 export default function MemberPermissionsPage() {
   const { name: projectName, userId } = useParams<{
@@ -71,7 +34,7 @@ export default function MemberPermissionsPage() {
   const permsQuery = useMemberPermissions(projectName!, userIdNum)
   const setPermissions = useSetMemberPermissions(projectName!, userIdNum)
 
-  const [templates, setTemplates] = useState({
+  const [templates, setTemplates] = useState<TemplateCaps>({
     read_templates: false,
     write_templates: false,
     delete_templates: false,
@@ -156,83 +119,15 @@ export default function MemberPermissionsPage() {
 
       {!loading && !loadError && (
         <>
-          <Card>
-            <CardHeader>
-              <CardTitle>Templates</CardTitle>
-              <CardDescription>
-                Project-wide. Templates are shared across every environment.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {TEMPLATE_CAPS.map((cap) => (
-                <label
-                  key={cap.key}
-                  className="flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2 transition-colors hover:bg-accent/50"
-                >
-                  <input
-                    type="checkbox"
-                    className="mt-1 h-4 w-4"
-                    checked={templates[cap.key]}
-                    onChange={() =>
-                      setTemplates((t) => ({ ...t, [cap.key]: !t[cap.key] }))
-                    }
-                  />
-                  <span className="space-y-0.5">
-                    <Label className="cursor-pointer">{cap.label}</Label>
-                    <span className="block text-xs text-muted-foreground">
-                      {cap.description}
-                    </span>
-                  </span>
-                </label>
-              ))}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Environment values</CardTitle>
-              <CardDescription>
-                Granted per environment, so a member can be given some
-                environments and denied others (e.g. staging but not production).
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {environments.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  This project has no environments yet.
-                </p>
-              ) : (
-                <div className="divide-y rounded-md border">
-                  {environments.map((env) => (
-                    <div
-                      key={env.name}
-                      className="flex items-center justify-between gap-4 px-4 py-3"
-                    >
-                      <span className="font-medium">{env.name}</span>
-                      <Select
-                        value={levelFor(env.name)}
-                        onValueChange={(v) =>
-                          setEnvLevels((m) => ({
-                            ...m,
-                            [env.name]: v as EnvLevel,
-                          }))
-                        }
-                      >
-                        <SelectTrigger className="w-44">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">No access</SelectItem>
-                          <SelectItem value="read">Read only</SelectItem>
-                          <SelectItem value="write">Read &amp; write</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <CapabilityEditor
+            environments={environments}
+            templates={templates}
+            onTemplatesChange={setTemplates}
+            envLevels={envLevels}
+            onEnvLevelChange={(env, level) =>
+              setEnvLevels((m) => ({ ...m, [env]: level }))
+            }
+          />
 
           <div className="flex justify-end gap-3">
             <Button

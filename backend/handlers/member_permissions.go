@@ -107,8 +107,8 @@ func (h *ProjectMemberHandler) GetMemberPermissions(w http.ResponseWriter, r *ht
 		SELECT rp.action, rp.resource, rp.key_env
 		FROM roles r
 		JOIN role_permissions rp ON rp.role_id = r.id
-		WHERE r.project_id = $1 AND r.name = $2
-	`, projectID, managedMemberRoleName(projectName, targetUserID))
+		WHERE r.name = $1
+	`, managedMemberRoleName(projectName, targetUserID))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "database error", "internal")
 		return
@@ -221,19 +221,17 @@ func (h *ProjectMemberHandler) SetMemberPermissions(w http.ResponseWriter, r *ht
 	}
 	defer tx.Rollback()
 
-	// Find or create the managed role. (The roles unique constraint includes the
-	// nullable global_values_name, so an ON CONFLICT upsert keyed on (name,
-	// project_id) is not reliable here — a plain find-or-insert is.)
+	// Find or create the managed role (a global role with a per-member unique
+	// name; its atoms carry key_project for scope).
 	roleName := managedMemberRoleName(projectName, targetUserID)
 	var roleID int64
 	err = tx.QueryRowContext(r.Context(),
-		`SELECT id FROM roles WHERE project_id = $1 AND name = $2`,
-		projectID, roleName).Scan(&roleID)
+		`SELECT id FROM roles WHERE name = $1`, roleName).Scan(&roleID)
 	if err == sql.ErrNoRows {
 		err = tx.QueryRowContext(r.Context(), `
-			INSERT INTO roles (name, project_id, is_auto_created) VALUES ($1, $2, false)
+			INSERT INTO roles (name, is_auto_created) VALUES ($1, false)
 			RETURNING id
-		`, roleName, projectID).Scan(&roleID)
+		`, roleName).Scan(&roleID)
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to upsert member role", "internal")

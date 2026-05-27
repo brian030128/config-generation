@@ -113,13 +113,16 @@ export interface GlobalValues {
   approval_condition: string
   created_by: number
   created_at: string
+  // Present on the detail (GetLatest) response: whether the caller holds grant
+  // on the entry and may edit its approval policy.
+  viewer_can_manage?: boolean
 }
 
+// Role is a global, named bundle of permission atoms. Its scope comes only from
+// the atoms' keys; it is not bound to any project or global values entry.
 export interface Role {
   id: number
   name: string
-  project_id: number | null
-  global_values_name: string | null
   is_auto_created: boolean
   created_at: string
   permissions?: RolePermission[]
@@ -142,6 +145,39 @@ export interface UserRole {
   role_id: number
   granted_by: number
   granted_at: string
+  // Populated only by the role-list endpoints (joined from users).
+  username?: string
+  display_name?: string | null
+}
+
+// RolesResponse is the role list for a scope plus whether the caller may manage
+// roles (holds grant). Mirrors ProjectMembersResponse.
+export interface RolesResponse {
+  items: Role[]
+  count: number
+  viewer_can_manage: boolean
+}
+
+// A single permission atom, as accepted by the role create/edit endpoints.
+export interface PermissionAtomInput {
+  action: string
+  resource: string
+  key_project?: string | null
+  key_env?: string | null
+  key_name?: string | null
+}
+
+export interface CreateRoleRequest {
+  name: string
+  permissions: PermissionAtomInput[]
+}
+
+export interface EditRolePermissionsRequest {
+  permissions: PermissionAtomInput[]
+}
+
+export interface UpdateApprovalConditionRequest {
+  approval_condition: string
 }
 
 // Request types

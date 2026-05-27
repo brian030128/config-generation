@@ -26,32 +26,42 @@ var _ = Describe("Projects", func() {
 			body := decode[map[string]any](rec)
 			Expect(body["name"]).To(Equal("billing-service"))
 			Expect(body["created_by"]).To(BeEquivalentTo(aliceID))
-			Expect(body["approval_condition"]).To(Equal("1 x project_admin"))
+			Expect(body["approval_condition"]).To(Equal("1 x billing-service_project_admin"))
 		})
 
-		It("accepts a custom approval condition", func() {
+		It("accepts a custom approval condition referencing the built-in admin role", func() {
 			rec := doRequest("POST", "/api/projects", map[string]any{
 				"name":               "billing-service",
-				"approval_condition": "2 x project_developer",
+				"approval_condition": "2 x billing-service_project_admin",
 			}, aliceID, "alice")
 
 			Expect(rec.Code).To(Equal(http.StatusCreated))
 			body := decode[map[string]any](rec)
-			Expect(body["approval_condition"]).To(Equal("2 x project_developer"))
+			Expect(body["approval_condition"]).To(Equal("2 x billing-service_project_admin"))
 		})
 
-		It("auto-creates a project_admin role with correct permissions", func() {
+		It("rejects a create condition referencing a role that does not exist yet", func() {
+			rec := doRequest("POST", "/api/projects", map[string]any{
+				"name":               "billing-service",
+				"approval_condition": "1 x release_manager",
+			}, aliceID, "alice")
+
+			Expect(rec.Code).To(Equal(http.StatusBadRequest))
+		})
+
+		It("rejects an unparseable approval condition", func() {
+			rec := doRequest("POST", "/api/projects", map[string]any{
+				"name":               "billing-service",
+				"approval_condition": "everyone must approve",
+			}, aliceID, "alice")
+
+			Expect(rec.Code).To(Equal(http.StatusBadRequest))
+		})
+
+		It("auto-creates a <project>_project_admin role with correct permissions", func() {
 			createProject(aliceID, "alice", "billing-service")
 
-			rec := doRequest("GET", "/api/projects/billing-service/roles", nil, aliceID, "alice")
-			Expect(rec.Code).To(Equal(http.StatusOK))
-
-			body := decode[map[string]any](rec)
-			items := body["items"].([]any)
-			Expect(items).To(HaveLen(1))
-
-			role := items[0].(map[string]any)
-			Expect(role["name"]).To(Equal("project_admin:billing-service"))
+			role := findRoleByName(aliceID, "alice", "billing-service_project_admin")
 			Expect(role["is_auto_created"]).To(BeTrue())
 
 			perms := role["permissions"].([]any)
@@ -71,13 +81,10 @@ var _ = Describe("Projects", func() {
 			Expect(permSet).To(HaveKey("grant:"))
 		})
 
-		It("assigns the creator to the project_admin role", func() {
+		It("assigns the creator to the project's admin role", func() {
 			createProject(aliceID, "alice", "billing-service")
 
-			rec := doRequest("GET", "/api/projects/billing-service/roles", nil, aliceID, "alice")
-			body := decode[map[string]any](rec)
-			items := body["items"].([]any)
-			role := items[0].(map[string]any)
+			role := findRoleByName(aliceID, "alice", "billing-service_project_admin")
 			members := role["members"].([]any)
 			Expect(members).To(HaveLen(1))
 			member := members[0].(map[string]any)

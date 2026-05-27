@@ -6,6 +6,7 @@ import {
 import { globalValuesApi } from "@/api/global-values"
 import { KvEditor } from "@/components/global-values/kv-editor"
 import { GvVersionHistory } from "@/components/global-values/version-history"
+import { ApprovalPolicyCard } from "@/components/roles/approval-policy-card"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { formatRelativeTime } from "@/lib/utils"
@@ -92,6 +93,21 @@ export default function GlobalValuesDetailPage() {
           </div>
         </div>
       </div>
+
+      {latest.viewer_can_manage && (
+        <div className="max-w-2xl space-y-3">
+          <Separator />
+          <ApprovalPolicyCard
+            kind="global-values"
+            name={name!}
+            currentCondition={latest.approval_condition}
+          />
+          <p className="text-sm text-muted-foreground">
+            Roles are managed globally on the Roles page. Create approver roles
+            there, then reference them by name above.
+          </p>
+        </div>
+      )}
     </div>
   )
 }
