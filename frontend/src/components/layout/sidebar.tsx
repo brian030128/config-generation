@@ -45,7 +45,7 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "flex h-screen flex-col border-r bg-sidebar text-sidebar-foreground transition-[width] duration-200",
+        "flex h-screen flex-col overflow-hidden border-r bg-sidebar text-sidebar-foreground transition-[width] duration-200",
         collapsed ? "w-16" : "w-60",
       )}
     >
@@ -83,7 +83,7 @@ export function Sidebar() {
         {activeIndex >= 0 && (
           <div
             aria-hidden="true"
-            className="absolute left-2 top-4 z-10 h-5 w-0.5 rounded-full bg-sidebar-accent-foreground transition-transform duration-300 ease-out"
+            className="absolute left-2 top-4 z-10 h-5 w-0.5 rounded-full bg-[#2563EB] transition-transform duration-300 ease-out"
             style={{ transform: `translateY(${activeIndex * 40}px)` }}
           />
         )}
@@ -97,13 +97,22 @@ export function Sidebar() {
                 "relative flex h-9 items-center gap-3 rounded-md px-3 text-sm transition-colors",
                 collapsed && "justify-center px-0",
                 isActive
-                  ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+                  ? "bg-sidebar-accent font-medium text-[#2563EB]"
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground",
               )
             }
           >
             <item.icon className="h-4 w-4" />
-            {!collapsed && item.label}
+            <span
+              className={cn(
+                "overflow-hidden whitespace-nowrap transition-[max-width,opacity] duration-200",
+                collapsed
+                  ? "max-w-0 opacity-0"
+                  : "max-w-40 opacity-100 delay-100",
+              )}
+            >
+              {item.label}
+            </span>
           </NavLink>
         ))}
       </nav>
