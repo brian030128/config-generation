@@ -94,21 +94,20 @@ export function Sidebar() {
             title={collapsed ? item.label : undefined}
             className={({ isActive }) =>
               cn(
-                "relative flex h-9 items-center gap-3 rounded-md px-3 text-sm transition-colors",
-                collapsed && "justify-center px-0",
+                "relative flex h-9 items-center rounded-md px-3 text-sm transition-colors",
                 isActive
                   ? "bg-sidebar-accent font-medium text-[#2563EB]"
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground",
               )
             }
           >
-            <item.icon className="h-4 w-4" />
+            <item.icon className="h-4 w-4 shrink-0" />
             <span
               className={cn(
-                "overflow-hidden whitespace-nowrap transition-[max-width,opacity] duration-200",
+                "overflow-hidden whitespace-nowrap transition-[max-width,opacity,margin] duration-200",
                 collapsed
-                  ? "max-w-0 opacity-0"
-                  : "max-w-40 opacity-100 delay-100",
+                  ? "max-w-0 opacity-0 ml-0"
+                  : "max-w-40 opacity-100 ml-3 delay-100",
               )}
             >
               {item.label}
