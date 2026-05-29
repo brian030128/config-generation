@@ -54,7 +54,7 @@ services:
       OIDC_CLIENT_ID: config-generation
       OIDC_CLIENT_SECRET: config-generation-secret
       OIDC_REDIRECT_URL: http://localhost:3000/api/auth/oidc/callback
-      OIDC_PROVIDER_NAME: Dex (github)
+      OIDC_PROVIDER_NAME: GitHub
       OIDC_SUPERUSER_EMAILS: alice@example.com
       SESSION_COOKIE_SECURE: "false"
       SESSION_COOKIE_SAMESITE: Lax
