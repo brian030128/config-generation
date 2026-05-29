@@ -45,10 +45,10 @@ var _ = Describe("Roles (global)", func() {
 			createProject(aliceID, "alice", "billing")
 			addProjectMember(aliceID, "alice", "billing", bobID)
 			rec := doRequest("PUT", fmt.Sprintf("/api/projects/billing/members/%d/permissions", bobID), map[string]any{
-				"read_templates":  true,
-				"write_templates": false,
+				"read_templates":   true,
+				"write_templates":  false,
 				"delete_templates": false,
-				"environments":    []any{},
+				"environments":     []any{},
 			}, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusOK))
 
