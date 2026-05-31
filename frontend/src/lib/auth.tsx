@@ -11,25 +11,24 @@ import {
   logout as apiLogout,
   me,
   type AuthResponse,
+  type AuthUser,
 } from "@/api/auth"
-
-interface AuthUser {
-  id: number
-  username: string
-}
 
 interface AuthContextValue {
   token: string | null
   user: AuthUser | null
   loading: boolean
-  login: (response: AuthResponse) => void
+  login: (response: AuthResponse) => Promise<void>
   logout: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-function toAuthUser(user: { id: number; username: string }): AuthUser {
-  return { id: user.id, username: user.username }
+// fromAuthResponse builds an AuthUser from the login/session response, which
+// does not include the superuser flag. login() refetches via me() to fill it
+// in, but we keep a conservative default in case that fetch fails.
+function fromAuthResponse(user: AuthResponse["user"]): AuthUser {
+  return { ...user, superuser: false }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -43,7 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const user = await me()
         if (!cancelled) {
-          setAuth({ token: "cookie-session", user: toAuthUser(user) })
+          setAuth({ token: "cookie-session", user })
         }
         return
       } catch {
@@ -53,13 +52,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const oldToken = localStorage.getItem("auth_token")
       if (oldToken) {
         try {
-          const response = await createSession(oldToken)
+          await createSession(oldToken)
           localStorage.removeItem("auth_token")
+          // After the session cookie is set, refetch via me() to pick up the
+          // superuser flag (createSession's response shape omits it).
+          const user = await me()
           if (!cancelled) {
-            setAuth({
-              token: "cookie-session",
-              user: toAuthUser(response.user),
-            })
+            setAuth({ token: "cookie-session", user })
           }
           return
         } catch {
@@ -81,12 +80,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const login = useCallback((response: AuthResponse) => {
+  const login = useCallback(async (response: AuthResponse) => {
     localStorage.removeItem("auth_token")
-    setAuth({
-      token: "cookie-session",
-      user: toAuthUser(response.user),
-    })
+    // Seed immediately so the UI flips out of the loading state, then refetch
+    // via /auth/me to obtain the superuser flag (not included in login).
+    setAuth({ token: "cookie-session", user: fromAuthResponse(response.user) })
+    try {
+      const user = await me()
+      setAuth({ token: "cookie-session", user })
+    } catch {
+      // Keep the seeded user; superuser stays false until next reload.
+    }
   }, [])
 
   const logout = useCallback(async () => {

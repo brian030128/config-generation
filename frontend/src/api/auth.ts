@@ -16,6 +16,9 @@ export interface AuthUser {
   username: string
   display_name: string | null
   created_at: string
+  // superuser is only populated by GET /api/auth/me. Other endpoints that
+  // return users (search, role members, project members) deliberately omit it.
+  superuser: boolean
 }
 
 export interface AuthConfig {

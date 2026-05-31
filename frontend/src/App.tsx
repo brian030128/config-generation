@@ -16,6 +16,7 @@ import WorkspacePage from "@/pages/workspace-page"
 import WorkspaceProjectPage from "@/pages/workspace-project-page"
 import WorkspaceEnvPage from "@/pages/workspace-env-page"
 import DeployPage from "@/pages/deploy-page"
+import AccountPage from "@/pages/account-page"
 
 const router = createBrowserRouter([
   {
@@ -47,6 +48,7 @@ const router = createBrowserRouter([
       { path: "workspace", element: <WorkspacePage /> },
       { path: "workspace/:name", element: <WorkspaceProjectPage /> },
       { path: "workspace/:name/env/:env", element: <WorkspaceEnvPage /> },
+      { path: "account", element: <AccountPage /> },
     ],
   },
   { path: "/login", element: <LoginPage /> },

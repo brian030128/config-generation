@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom"
-import { ChevronRight } from "lucide-react"
+import { ChevronRight, House } from "lucide-react"
 import { Fragment } from "react"
 
 const labelMap: Record<string, string> = {
@@ -10,13 +10,21 @@ const labelMap: Record<string, string> = {
   environments: "Environments",
   members: "Members",
   permissions: "Permissions",
+  account: "Account",
+  workspace: "Workspace",
+  roles: "Roles",
+  "pull-requests": "Pull Requests",
+  deploy: "Deploy",
 }
 
 export function Breadcrumbs() {
   const { pathname } = useLocation()
   const segments = pathname.split("/").filter(Boolean)
 
-  const crumbs: { label: string; to: string }[] = []
+  // Always start with a Home crumb
+  const crumbs: { label: string; to: string; icon?: boolean }[] = [
+    { label: "Home", to: "/", icon: true },
+  ]
   let path = ""
 
   for (let i = 0; i < segments.length; i++) {
@@ -36,18 +44,18 @@ export function Breadcrumbs() {
     crumbs.push({ label, to: path })
   }
 
-  if (crumbs.length <= 1) return null
-
   return (
-    <nav className="flex items-center gap-1 text-sm text-muted-foreground">
+    <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-sm text-muted-foreground">
       {crumbs.map((crumb, i) => (
         <Fragment key={crumb.to}>
-          {i > 0 && <ChevronRight className="h-3 w-3" />}
+          {i > 0 && <ChevronRight className="h-3 w-3 shrink-0" />}
           {i === crumbs.length - 1 ? (
-            <span className="font-medium text-foreground">{crumb.label}</span>
+            <span className="font-medium text-foreground">
+              {crumb.icon ? <House className="h-3.5 w-3.5" aria-label="Home" /> : crumb.label}
+            </span>
           ) : (
-            <Link to={crumb.to} className="hover:text-foreground transition-colors">
-              {crumb.label}
+            <Link to={crumb.to} className="hover:text-foreground transition-colors flex items-center">
+              {crumb.icon ? <House className="h-3.5 w-3.5" aria-label="Home" /> : crumb.label}
             </Link>
           )}
         </Fragment>

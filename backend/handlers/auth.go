@@ -225,13 +225,13 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.loadUserByID(r.Context(), authUser.UserID)
+	me, err := h.loadMeByID(r.Context(), authUser.UserID)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "unauthorized")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, user)
+	writeJSON(w, http.StatusOK, me)
 }
 
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
@@ -385,6 +385,17 @@ func (h *AuthHandler) loadUserByID(ctx context.Context, userID int64) (models.Us
 		userID,
 	).Scan(&user.ID, &user.Username, &user.DisplayName, &user.CreatedAt)
 	return user, err
+}
+
+// loadMeByID is like loadUserByID but additionally includes the superuser flag.
+// It is intended only for /api/auth/me; other endpoints must not leak this flag.
+func (h *AuthHandler) loadMeByID(ctx context.Context, userID int64) (models.MeResponse, error) {
+	var me models.MeResponse
+	err := h.DB.QueryRowContext(ctx,
+		`SELECT id, username, display_name, created_at, superuser FROM users WHERE id = $1`,
+		userID,
+	).Scan(&me.ID, &me.Username, &me.DisplayName, &me.CreatedAt, &me.Superuser)
+	return me, err
 }
 
 func (h *AuthHandler) ensureOIDC(ctx context.Context) (*oauth2.Config, *oidc.IDTokenVerifier, error) {

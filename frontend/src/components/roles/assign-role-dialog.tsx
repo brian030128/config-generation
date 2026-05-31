@@ -4,6 +4,7 @@ import type { Role, User } from "@/api/types"
 import { useAssignRole } from "@/hooks/use-roles"
 import { useProjectMembers } from "@/hooks/use-projects"
 import { useUserSearch } from "@/hooks/use-users"
+import { useAuth } from "@/lib/auth"
 import { inferTarget, roleGrantsProjectRead } from "@/lib/role-permissions"
 import { getApiErrorMessage } from "@/lib/utils"
 import {
@@ -42,6 +43,7 @@ export function AssignRoleDialog({
   const [search, setSearch] = useState("")
   const debouncedSearch = useDebouncedValue(search, 250)
   const assign = useAssignRole()
+  const { user: currentUser } = useAuth()
 
   const target = inferTarget(role.permissions ?? [])
   const roleHasProjectRead =
@@ -54,7 +56,10 @@ export function AssignRoleDialog({
   const memberIds = new Set(
     (membersQuery.data?.items ?? []).map((m) => m.user_id),
   )
-  const requiresMembership = !!gatingProject
+  // Superusers bypass the membership gate — the backend will accept the
+  // assignment regardless, and the warning banner still informs them that
+  // the target user needs project membership for the permissions to take effect.
+  const requiresMembership = !!gatingProject && !currentUser?.superuser
 
   const { data, isLoading, error } = useUserSearch(debouncedSearch, open)
   const existing = new Set((role.members ?? []).map((m) => m.user_id))
@@ -96,13 +101,16 @@ export function AssignRoleDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          {requiresMembership && (
+          {!!gatingProject && (
             <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
               This role grants permissions on{" "}
               <span className="font-medium">{gatingProject}</span> but not
-              project read access. Only members of {gatingProject} can be
-              assigned — add the user to the project first, or include "Read
-              project" in the role.
+              project read access.{" "}
+              {currentUser?.superuser ? (
+                <>You can still assign it, but the user also needs to be added as a project member for these permissions to take effect.</>
+              ) : (
+                <>Only members of {gatingProject} can be assigned — add the user to the project first, or include "Read project" in the role.</>
+              )}
             </p>
           )}
 

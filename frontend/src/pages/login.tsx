@@ -107,7 +107,7 @@ export default function LoginPage() {
     setLoginLoading(true)
     try {
       const res = await apiLogin(loginUsername.trim(), loginPassword)
-      login(res)
+      await login(res)
       navigate("/projects", { replace: true })
     } catch (err) {
       setLoginError(getErrorMessage(err))
@@ -138,7 +138,7 @@ export default function LoginPage() {
         regPassword,
         regDisplayName.trim() || undefined,
       )
-      login(res)
+      await login(res)
       navigate("/projects", { replace: true })
     } catch (err) {
       setRegError(getErrorMessage(err))

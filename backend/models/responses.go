@@ -46,6 +46,14 @@ type AuthResponse struct {
 	User  User   `json:"user"`
 }
 
+// MeResponse is the authenticated user's own profile. It is the only endpoint
+// that exposes the superuser flag, and only for the caller themselves — user
+// listings/searches and role member listings deliberately omit it.
+type MeResponse struct {
+	User
+	Superuser bool `json:"superuser"`
+}
+
 type AuthConfigResponse struct {
 	OIDCEnabled          bool   `json:"oidc_enabled"`
 	OIDCProviderName     string `json:"oidc_provider_name"`

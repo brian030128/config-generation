@@ -5,24 +5,13 @@ import {
   FolderOpen,
   GitPullRequest,
   Globe,
-  LogOut,
   Pencil,
   Rocket,
   Shield,
 } from "lucide-react"
-import { useAuth } from "@/lib/auth"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Logo } from "@/components/brand/logo"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { Separator } from "@/components/ui/separator"
 
 const navItems = [
   { to: "/projects", label: "Projects", icon: FolderOpen },
@@ -34,9 +23,7 @@ const navItems = [
 ]
 
 export function Sidebar() {
-  const { user, logout } = useAuth()
   const location = useLocation()
-  const [signOutOpen, setSignOutOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const activeIndex = navItems.findIndex((item) =>
     location.pathname.startsWith(item.to),
@@ -115,47 +102,17 @@ export function Sidebar() {
           </NavLink>
         ))}
       </nav>
-      <Separator />
       <div
         className={cn(
-          "flex items-center justify-between p-3",
-          collapsed && "justify-center px-2",
+          "border-t px-4 py-3 transition-[opacity] duration-200",
+          collapsed ? "opacity-0 pointer-events-none select-none" : "opacity-100",
         )}
+        aria-hidden={collapsed}
       >
-        <span
-          className={cn(
-            "truncate text-sm text-muted-foreground",
-            collapsed && "sr-only",
-          )}
-        >
-          {user?.username ?? "Unknown"}
-        </span>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setSignOutOpen(true)}
-          title="Sign out"
-        >
-          <LogOut className="h-4 w-4" />
-        </Button>
+        <p className="mt-0.5 text-[10px] text-sidebar-foreground/30">
+          © 2026 NYCU Team 18
+        </p>
       </div>
-      <Dialog open={signOutOpen} onOpenChange={setSignOutOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Sign out?</DialogTitle>
-            <DialogDescription>
-              You will need to sign in again to continue managing
-              configuration.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSignOutOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={logout}>Sign out</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </aside>
   )
 }

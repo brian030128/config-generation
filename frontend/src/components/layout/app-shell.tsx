@@ -3,6 +3,7 @@ import { useAuth } from "@/lib/auth"
 import { Sidebar } from "./sidebar"
 import { Breadcrumbs } from "./breadcrumbs"
 import { SettingsPanel } from "./settings-panel"
+import { AccountMenu } from "./account-menu"
 
 export function AppShell() {
   const { user, loading } = useAuth()
@@ -23,8 +24,9 @@ export function AppShell() {
     <div className="flex h-screen">
       <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex h-18 items-center border-b px-6">
+        <header className="flex h-18 items-center gap-4 border-b px-6">
           <Breadcrumbs />
+          <AccountMenu className="ml-auto" />
         </header>
         <main className="flex-1 overflow-auto p-6">
           <Outlet />
