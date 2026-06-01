@@ -37,7 +37,7 @@ func (h *EnvAdminHandler) resolveEnv(w http.ResponseWriter, r *http.Request, pro
 		return 0, false
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return 0, false
 	}
 	return envID, true
@@ -90,7 +90,7 @@ func (h *EnvAdminHandler) List(w http.ResponseWriter, r *http.Request) {
 		ORDER BY ea.granted_at
 	`, envID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer rows.Close()
@@ -99,13 +99,13 @@ func (h *EnvAdminHandler) List(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var a models.EnvAdmin
 		if err := rows.Scan(&a.UserID, &a.Username, &a.DisplayName, &a.GrantedBy, &a.GrantedAt); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 		admins = append(admins, a)
 	}
 	if err := rows.Err(); err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -134,7 +134,7 @@ func (h *EnvAdminHandler) Add(w http.ResponseWriter, r *http.Request) {
 
 	var req models.AddEnvAdminRequest
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body", "bad_request")
+		writeError(w, http.StatusBadRequest, msgInvalidRequestBody, "bad_request")
 		return
 	}
 	if req.UserID == 0 {
@@ -145,7 +145,7 @@ func (h *EnvAdminHandler) Add(w http.ResponseWriter, r *http.Request) {
 	var exists bool
 	if err := h.DB.QueryRowContext(r.Context(),
 		`SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)`, req.UserID).Scan(&exists); err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	if !exists {
@@ -209,7 +209,7 @@ func (h *EnvAdminHandler) Remove(w http.ResponseWriter, r *http.Request) {
 			EXISTS(SELECT 1 FROM env_admins WHERE environment_id = $1 AND user_id = $2),
 			(SELECT COUNT(*) FROM env_admins WHERE environment_id = $1)
 	`, envID, targetUserID).Scan(&isAdmin, &adminCount); err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	if isAdmin && adminCount <= 1 {
@@ -221,7 +221,7 @@ func (h *EnvAdminHandler) Remove(w http.ResponseWriter, r *http.Request) {
 		`DELETE FROM env_admins WHERE environment_id = $1 AND user_id = $2`,
 		envID, targetUserID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	rows, _ := result.RowsAffected()

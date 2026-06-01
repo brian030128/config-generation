@@ -23,7 +23,7 @@ func (h *PullRequestHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	var req models.CreatePullRequestRequest
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body", "bad_request")
+		writeError(w, http.StatusBadRequest, msgInvalidRequestBody, "bad_request")
 		return
 	}
 	if req.Title == "" {
@@ -45,7 +45,7 @@ func (h *PullRequestHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer tx.Rollback()
@@ -60,7 +60,7 @@ func (h *PullRequestHandler) Create(w http.ResponseWriter, r *http.Request) {
 		0)
 	`, *req.GlobalValuesName).Scan(&baseVersionID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	if baseVersionID == 0 {
@@ -104,7 +104,7 @@ func (h *PullRequestHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to commit", "internal")
+		writeError(w, http.StatusInternalServerError, msgFailedToCommit, "internal")
 		return
 	}
 
@@ -263,7 +263,7 @@ func (h *PullRequestHandler) Approve(w http.ResponseWriter, r *http.Request) {
 	user := currentUser(r)
 	prID, err := urlParamInt64(r, "prID")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid PR ID", "bad_request")
+		writeError(w, http.StatusBadRequest, msgInvalidPRID, "bad_request")
 		return
 	}
 
@@ -279,11 +279,11 @@ func (h *PullRequestHandler) Approve(w http.ResponseWriter, r *http.Request) {
 		&pr.MergedAt, &pr.ClosedAt,
 	)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "pull request not found", "not_found")
+		writeError(w, http.StatusNotFound, msgPullRequestNotFound, "not_found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -343,7 +343,7 @@ func (h *PullRequestHandler) WithdrawApproval(w http.ResponseWriter, r *http.Req
 	user := currentUser(r)
 	prID, err := urlParamInt64(r, "prID")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid PR ID", "bad_request")
+		writeError(w, http.StatusBadRequest, msgInvalidPRID, "bad_request")
 		return
 	}
 
@@ -352,7 +352,7 @@ func (h *PullRequestHandler) WithdrawApproval(w http.ResponseWriter, r *http.Req
 		WHERE pr_id = $1 AND user_id = $2 AND withdrawn_at IS NULL
 	`, prID, user.UserID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	rows, _ := result.RowsAffected()
@@ -373,31 +373,31 @@ func (h *PullRequestHandler) WithdrawApproval(w http.ResponseWriter, r *http.Req
 		&pr.MergedAt, &pr.ClosedAt,
 	)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
 	if pr.Status == "approved" {
 		condition, err := h.loadApprovalCondition(r.Context(), &pr)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 		approvals, err := h.loadApprovals(r.Context(), prID)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 		met, err := h.checkApprovalConditionMet(r.Context(), &pr, condition, approvals)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 		if !met {
 			if _, err := h.DB.ExecContext(r.Context(), `
 				UPDATE pull_requests SET status = 'open', updated_at = NOW() WHERE id = $1
 			`, prID); err != nil {
-				writeError(w, http.StatusInternalServerError, "database error", "internal")
+				writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 				return
 			}
 			pr.Status = "open"
@@ -412,7 +412,7 @@ func (h *PullRequestHandler) WithdrawApproval(w http.ResponseWriter, r *http.Req
 func (h *PullRequestHandler) Get(w http.ResponseWriter, r *http.Request) {
 	prID, err := urlParamInt64(r, "prID")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid PR ID", "bad_request")
+		writeError(w, http.StatusBadRequest, msgInvalidPRID, "bad_request")
 		return
 	}
 
@@ -427,17 +427,17 @@ func (h *PullRequestHandler) Get(w http.ResponseWriter, r *http.Request) {
 		&pr.MergedAt, &pr.ClosedAt,
 	)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "pull request not found", "not_found")
+		writeError(w, http.StatusNotFound, msgPullRequestNotFound, "not_found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
 	pr.Changes, err = h.loadChanges(r.Context(), pr.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -463,7 +463,7 @@ func (h *PullRequestHandler) Get(w http.ResponseWriter, r *http.Request) {
 func (h *PullRequestHandler) Close(w http.ResponseWriter, r *http.Request) {
 	prID, err := urlParamInt64(r, "prID")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid PR ID", "bad_request")
+		writeError(w, http.StatusBadRequest, msgInvalidPRID, "bad_request")
 		return
 	}
 
@@ -472,11 +472,11 @@ func (h *PullRequestHandler) Close(w http.ResponseWriter, r *http.Request) {
 		`SELECT status FROM pull_requests WHERE id = $1`, prID,
 	).Scan(&currentStatus)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "pull request not found", "not_found")
+		writeError(w, http.StatusNotFound, msgPullRequestNotFound, "not_found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -509,13 +509,13 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 	user := currentUser(r)
 	prID, err := urlParamInt64(r, "prID")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid PR ID", "bad_request")
+		writeError(w, http.StatusBadRequest, msgInvalidPRID, "bad_request")
 		return
 	}
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer tx.Rollback()
@@ -532,11 +532,11 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 		&pr.MergedAt, &pr.ClosedAt,
 	)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "pull request not found", "not_found")
+		writeError(w, http.StatusNotFound, msgPullRequestNotFound, "not_found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -565,7 +565,7 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 		FROM pr_changes WHERE pr_id = $1
 	`, prID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer changeRows.Close()
@@ -578,7 +578,7 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 			&c.EnvironmentName, &c.GlobalValuesName, &c.BaseVersionID,
 			&c.ProposedPayload, &c.CreatedAt,
 		); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 		changes = append(changes, c)
@@ -614,7 +614,7 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 							SELECT id FROM environments WHERE project_id = $1 AND name = $2
 						)`,
 						*c.ProjectID, *c.EnvironmentName); err != nil {
-						writeError(w, http.StatusInternalServerError, "failed to apply change", "internal")
+						writeError(w, http.StatusInternalServerError, msgFailedToApplyChange, "internal")
 						return
 					}
 					if _, err = tx.ExecContext(r.Context(), `
@@ -622,7 +622,7 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 							SELECT id FROM environments WHERE project_id = $1 AND name = $2
 						)`,
 						*c.ProjectID, *c.EnvironmentName); err != nil {
-						writeError(w, http.StatusInternalServerError, "failed to apply change", "internal")
+						writeError(w, http.StatusInternalServerError, msgFailedToApplyChange, "internal")
 						return
 					}
 					_, err = tx.ExecContext(r.Context(), `
@@ -639,7 +639,7 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 					VALUES ($1, $2, $3, $4)
 					ON CONFLICT (project_id, name) DO NOTHING
 				`, *c.ProjectID, envReq.Name, envReq.Description, pr.AuthorID); err != nil {
-					writeError(w, http.StatusInternalServerError, "failed to apply change", "internal")
+					writeError(w, http.StatusInternalServerError, msgFailedToApplyChange, "internal")
 					return
 				}
 				// Seed the creator as the environment's first env-admin. Resolving
@@ -663,7 +663,7 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 					0) + 1
 				`, *c.GlobalValuesName).Scan(&nextVersion)
 				if err != nil {
-					writeError(w, http.StatusInternalServerError, "database error", "internal")
+					writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 					return
 				}
 				_, err = tx.ExecContext(r.Context(), `
@@ -692,7 +692,7 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 					0) + 1
 				`, *c.ProjectID, *c.TemplateName).Scan(&nextVersion)
 				if err != nil {
-					writeError(w, http.StatusInternalServerError, "database error", "internal")
+					writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 					return
 				}
 				_, err = tx.ExecContext(r.Context(), `
@@ -719,7 +719,7 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				if err != nil {
-					writeError(w, http.StatusInternalServerError, "database error", "internal")
+					writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 					return
 				}
 				if c.Operation == "delete" {
@@ -737,7 +737,7 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 					0) + 1
 				`, *c.ProjectID, envID).Scan(&nextVersion)
 				if err != nil {
-					writeError(w, http.StatusInternalServerError, "database error", "internal")
+					writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 					return
 				}
 				_, err = tx.ExecContext(r.Context(), `
@@ -747,7 +747,7 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to apply change", "internal")
+				writeError(w, http.StatusInternalServerError, msgFailedToApplyChange, "internal")
 				return
 			}
 		}
@@ -786,7 +786,7 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to commit", "internal")
+		writeError(w, http.StatusInternalServerError, msgFailedToCommit, "internal")
 		return
 	}
 
@@ -804,11 +804,11 @@ func (h *PullRequestHandler) GetActiveDraft(w http.ResponseWriter, r *http.Reque
 	var projectID int64
 	err := h.DB.QueryRowContext(r.Context(), `SELECT id FROM projects WHERE name = $1`, projectName).Scan(&projectID)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		writeError(w, http.StatusNotFound, msgProjectNotFound, "not_found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -826,7 +826,7 @@ func (h *PullRequestHandler) GetActiveDraft(w http.ResponseWriter, r *http.Reque
 		&pr.MergedAt, &pr.ClosedAt,
 	)
 	if err != nil && err != sql.ErrNoRows {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -851,14 +851,14 @@ func (h *PullRequestHandler) GetActiveDraft(w http.ResponseWriter, r *http.Reque
 	// Load changes.
 	pr.Changes, err = h.loadChanges(r.Context(), pr.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
 	// Load approval condition.
 	condition, err := h.loadApprovalCondition(r.Context(), &pr)
 	if err != nil && err != sql.ErrNoRows {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	pr.ApprovalCondition = condition
@@ -866,7 +866,7 @@ func (h *PullRequestHandler) GetActiveDraft(w http.ResponseWriter, r *http.Reque
 	// Load approvals.
 	pr.Approvals, err = h.loadApprovals(r.Context(), pr.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -878,13 +878,13 @@ func (h *PullRequestHandler) SubmitDraft(w http.ResponseWriter, r *http.Request)
 	user := currentUser(r)
 	prID, err := urlParamInt64(r, "prID")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid PR ID", "bad_request")
+		writeError(w, http.StatusBadRequest, msgInvalidPRID, "bad_request")
 		return
 	}
 
 	var req models.SubmitDraftRequest
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body", "bad_request")
+		writeError(w, http.StatusBadRequest, msgInvalidRequestBody, "bad_request")
 		return
 	}
 	if req.Title == "" {
@@ -903,11 +903,11 @@ func (h *PullRequestHandler) SubmitDraft(w http.ResponseWriter, r *http.Request)
 		&pr.MergedAt, &pr.ClosedAt,
 	)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "pull request not found", "not_found")
+		writeError(w, http.StatusNotFound, msgPullRequestNotFound, "not_found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -925,7 +925,7 @@ func (h *PullRequestHandler) SubmitDraft(w http.ResponseWriter, r *http.Request)
 	if pr.ProjectID != nil {
 		problems, verr := h.validateWorkspace(r.Context(), *pr.ProjectID, user.UserID)
 		if verr != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 		if len(problems) > 0 {
@@ -1016,7 +1016,7 @@ func (h *PullRequestHandler) List(w http.ResponseWriter, r *http.Request) {
 		`)
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer rows.Close()
@@ -1029,7 +1029,7 @@ func (h *PullRequestHandler) List(w http.ResponseWriter, r *http.Request) {
 			&pr.Status, &pr.IsConflicted, &pr.CreatedAt, &pr.UpdatedAt,
 			&pr.MergedAt, &pr.ClosedAt,
 		); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 		items = append(items, pr)

@@ -48,7 +48,7 @@ func (h *GlobalValuesHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	var req models.CreateGlobalValuesRequest
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body", "bad_request")
+		writeError(w, http.StatusBadRequest, msgInvalidRequestBody, "bad_request")
 		return
 	}
 	if req.Name == "" {
@@ -78,13 +78,13 @@ func (h *GlobalValuesHandler) Create(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, vErr.msg, "validation")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer tx.Rollback()
@@ -148,7 +148,7 @@ func (h *GlobalValuesHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to commit", "internal")
+		writeError(w, http.StatusInternalServerError, msgFailedToCommit, "internal")
 		return
 	}
 
@@ -161,7 +161,7 @@ func (h *GlobalValuesHandler) AppendVersion(w http.ResponseWriter, r *http.Reque
 
 	var req models.AppendGlobalValuesVersionRequest
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body", "bad_request")
+		writeError(w, http.StatusBadRequest, msgInvalidRequestBody, "bad_request")
 		return
 	}
 	if len(req.Payload) == 0 {
@@ -175,7 +175,7 @@ func (h *GlobalValuesHandler) AppendVersion(w http.ResponseWriter, r *http.Reque
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer tx.Rollback()
@@ -190,7 +190,7 @@ func (h *GlobalValuesHandler) AppendVersion(w http.ResponseWriter, r *http.Reque
 		0) + 1
 	`, name).Scan(&nextVersion)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	if nextVersion == 1 {
@@ -215,7 +215,7 @@ func (h *GlobalValuesHandler) AppendVersion(w http.ResponseWriter, r *http.Reque
 	}
 
 	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to commit", "internal")
+		writeError(w, http.StatusInternalServerError, msgFailedToCommit, "internal")
 		return
 	}
 
@@ -232,7 +232,7 @@ func (h *GlobalValuesHandler) UpdateApprovalCondition(w http.ResponseWriter, r *
 	var exists bool
 	err := h.DB.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM global_values WHERE name = $1)`, name).Scan(&exists)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	if !exists {
@@ -242,7 +242,7 @@ func (h *GlobalValuesHandler) UpdateApprovalCondition(w http.ResponseWriter, r *
 
 	var req models.UpdateApprovalConditionRequest
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body", "bad_request")
+		writeError(w, http.StatusBadRequest, msgInvalidRequestBody, "bad_request")
 		return
 	}
 
@@ -252,7 +252,7 @@ func (h *GlobalValuesHandler) UpdateApprovalCondition(w http.ResponseWriter, r *
 			writeError(w, http.StatusBadRequest, vErr.msg, "validation")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -269,7 +269,7 @@ func (h *GlobalValuesHandler) UpdateApprovalCondition(w http.ResponseWriter, r *
 		FROM global_values WHERE name = $1 ORDER BY version_id DESC LIMIT 1
 	`, name).Scan(&gv.ID, &gv.Name, &gv.VersionID, &gv.Payload, &gv.CommitMessage, &gv.ApprovalCondition, &gv.CreatedBy, &gv.CreatedAt)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -294,7 +294,7 @@ func (h *GlobalValuesHandler) GetLatest(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -334,7 +334,7 @@ func (h *GlobalValuesHandler) GetVersion(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -349,7 +349,7 @@ func (h *GlobalValuesHandler) List(w http.ResponseWriter, r *http.Request) {
 		ORDER BY name, version_id DESC
 	`)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer rows.Close()
@@ -358,13 +358,13 @@ func (h *GlobalValuesHandler) List(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var gv models.GlobalValues
 		if err := rows.Scan(&gv.ID, &gv.Name, &gv.VersionID, &gv.Payload, &gv.CommitMessage, &gv.ApprovalCondition, &gv.CreatedBy, &gv.CreatedAt); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 		entries = append(entries, gv)
 	}
 	if err := rows.Err(); err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -384,7 +384,7 @@ func (h *GlobalValuesHandler) ListVersions(w http.ResponseWriter, r *http.Reques
 		ORDER BY version_id DESC
 	`, name)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer rows.Close()
@@ -393,13 +393,13 @@ func (h *GlobalValuesHandler) ListVersions(w http.ResponseWriter, r *http.Reques
 	for rows.Next() {
 		var gv models.GlobalValues
 		if err := rows.Scan(&gv.ID, &gv.Name, &gv.VersionID, &gv.Payload, &gv.CommitMessage, &gv.ApprovalCondition, &gv.CreatedBy, &gv.CreatedAt); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 		versions = append(versions, gv)
 	}
 	if err := rows.Err(); err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 

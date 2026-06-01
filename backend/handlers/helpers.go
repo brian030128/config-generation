@@ -12,6 +12,19 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+// Shared error message literals — extracted to satisfy go:S1192
+// ("define a constant instead of duplicating this literal …").
+const (
+	msgDatabaseError       = "database error"
+	msgInvalidRequestBody  = "invalid request body"
+	msgProjectNotFound     = "project not found"
+	msgFailedToCommit      = "failed to commit"
+	msgPullRequestNotFound = "pull request not found"
+	msgInvalidPRID         = "invalid PR ID"
+	msgFailedToSetPerms    = "failed to set permissions"
+	msgFailedToApplyChange = "failed to apply change"
+)
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

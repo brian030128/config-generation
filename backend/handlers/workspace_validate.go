@@ -180,17 +180,17 @@ func (h *PullRequestHandler) ValidateWorkspace(w http.ResponseWriter, r *http.Re
 	projectName := chi.URLParam(r, "projectName")
 	projectID, err := h.resolveProjectIDByName(r.Context(), projectName)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		writeError(w, http.StatusNotFound, msgProjectNotFound, "not_found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
 	problems, err := h.validateWorkspace(r.Context(), projectID, user.UserID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	if problems == nil {

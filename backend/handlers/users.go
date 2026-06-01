@@ -42,7 +42,7 @@ func (h *UserHandler) Search(w http.ResponseWriter, r *http.Request) {
 		`, q)
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer rows.Close()
@@ -51,13 +51,13 @@ func (h *UserHandler) Search(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var u models.User
 		if err := rows.Scan(&u.ID, &u.Username, &u.DisplayName, &u.CreatedAt); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 		usersList = append(usersList, u)
 	}
 	if err := rows.Err(); err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
