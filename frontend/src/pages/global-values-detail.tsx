@@ -65,7 +65,7 @@ export default function GlobalValuesDetailPage() {
               >
                 return to latest
               </button>
-              )
+              {")"}
             </span>
           )}
         </div>

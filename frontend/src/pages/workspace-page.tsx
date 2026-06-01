@@ -79,10 +79,11 @@ export default function WorkspacePage() {
           const changeCount = pr.changes?.length ?? 0
 
           return (
-            <div
+            <button
               key={pr.id}
+              type="button"
               onClick={() => navigate(`/workspace/${projectName}`)}
-              className="flex cursor-pointer items-center justify-between rounded-lg border px-4 py-3 transition-colors hover:bg-accent/50"
+              className="flex w-full cursor-pointer items-center justify-between rounded-lg border px-4 py-3 text-left transition-colors hover:bg-accent/50"
             >
               <div className="space-y-1">
                 <div className="flex items-center gap-3">
@@ -100,7 +101,7 @@ export default function WorkspacePage() {
                 </p>
               </div>
               <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            </div>
+            </button>
           )
         })}
       </div>

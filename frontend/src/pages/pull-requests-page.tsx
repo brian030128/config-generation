@@ -73,10 +73,11 @@ export default function PullRequestsPage() {
 
           <div className="space-y-2">
             {filtered.map((pr) => (
-              <div
+              <button
                 key={pr.id}
+                type="button"
                 onClick={() => navigate(`/pull-requests/${pr.id}`)}
-                className="flex cursor-pointer items-center justify-between rounded-lg border px-4 py-3 transition-colors hover:bg-accent/50"
+                className="flex w-full cursor-pointer items-center justify-between rounded-lg border px-4 py-3 text-left transition-colors hover:bg-accent/50"
               >
                 <div className="flex items-center gap-3">
                   <span className="text-sm font-medium text-muted-foreground">
@@ -96,7 +97,7 @@ export default function PullRequestsPage() {
                 <span className="text-xs text-muted-foreground">
                   {formatRelativeTime(pr.updated_at)}
                 </span>
-              </div>
+              </button>
             ))}
           </div>
         </TabsContent>

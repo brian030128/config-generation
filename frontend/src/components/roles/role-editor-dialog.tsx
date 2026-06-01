@@ -78,7 +78,9 @@ function CheckboxRow({
         onChange={onChange}
       />
       <span className="space-y-0.5">
-        <Label className="cursor-pointer">{label}</Label>
+        <span className="text-sm font-medium leading-none cursor-pointer">
+          {label}
+        </span>
         <span className="block text-xs text-muted-foreground">
           {description}
         </span>

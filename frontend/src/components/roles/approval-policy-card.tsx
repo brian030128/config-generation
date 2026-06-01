@@ -71,7 +71,7 @@ export function ApprovalPolicyCard({
           <code className="text-xs">
             1 x {builtin} AND 1 x release_manager
           </code>
-          .
+          {"."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
