@@ -48,12 +48,12 @@ function TemplateDiffCard({ change, projectName }: Readonly<{ change: PRChange; 
   const newLines = proposedBody.split("\n")
   const maxLen = Math.max(oldLines.length, newLines.length)
 
-  type DiffLine = { type: "unchanged" | "added" | "removed" | "changed"; num: number; old?: string; new?: string }
+  type DiffLine = { type: "context" | "added" | "removed" | "changed"; num: number; old?: string; new?: string }
   const lines: DiffLine[] = []
   for (let i = 0; i < maxLen; i++) {
     const ol = i < oldLines.length ? oldLines[i] : undefined
     const nl = i < newLines.length ? newLines[i] : undefined
-    if (ol === nl) lines.push({ type: "unchanged", num: i + 1, old: ol, new: nl })
+    if (ol === nl) lines.push({ type: "context", num: i + 1, old: ol, new: nl })
     else if (ol === undefined) lines.push({ type: "added", num: i + 1, new: nl })
     else if (nl === undefined) lines.push({ type: "removed", num: i + 1, old: ol })
     else lines.push({ type: "changed", num: i + 1, old: ol, new: nl })
