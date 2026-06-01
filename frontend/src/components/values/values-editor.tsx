@@ -5,6 +5,7 @@ import type { ProjectConfigValues } from "@/api/types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { safeString } from "@/lib/utils"
 import {
   parseReference,
 } from "./reference-selector"
@@ -37,12 +38,10 @@ export function ValuesEditor({
     for (const v of variables) {
       if (values?.payload && v.name in values.payload) {
         newPayload[v.name] = values.payload[v.name]
-      } else if (v.default !== undefined) {
-        newPayload[v.name] = v.default
       } else {
-        newPayload[v.name] = ""
+        newPayload[v.name] = v.default ?? ""
       }
-      const ref = parseReference(String(newPayload[v.name] ?? ""))
+      const ref = parseReference(safeString(newPayload[v.name]))
       if (ref) {
         newRefMode[v.name] = true
         newRefState[v.name] = ref

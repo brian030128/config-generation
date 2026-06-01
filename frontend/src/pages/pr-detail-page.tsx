@@ -13,7 +13,7 @@ import { useProjects } from "@/hooks/use-projects"
 import { useAuth } from "@/lib/auth"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { formatRelativeTime } from "@/lib/utils"
+import { formatRelativeTime, safeString } from "@/lib/utils"
 import {
   diffLineBgClass,
   diffLinePrefix,
@@ -103,8 +103,7 @@ function TemplateDiffCard({ change, projectName }: Readonly<{ change: PRChange; 
 // Render a diff value: lists as JSON (e.g. ["a","b"]), scalars as plain text.
 function formatVal(v: unknown): string {
   if (v === undefined) return "—"
-  if (Array.isArray(v)) return JSON.stringify(v)
-  return String(v)
+  return safeString(v)
 }
 
 function KvDiffCard({ change }: Readonly<{ change: PRChange }>) {

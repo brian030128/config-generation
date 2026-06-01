@@ -141,9 +141,9 @@ func (h *PullRequestHandler) stage(w http.ResponseWriter, r *http.Request, sc st
 		}
 	case "values":
 		var envID int64
-		if envErr := tx.QueryRowContext(r.Context(),
+		if tx.QueryRowContext(r.Context(),
 			`SELECT id FROM environments WHERE project_id = $1 AND name = $2`,
-			projectID, sc.envName).Scan(&envID); envErr == nil {
+			projectID, sc.envName).Scan(&envID) == nil {
 			_ = tx.QueryRowContext(r.Context(), `
 				SELECT COALESCE(
 					(SELECT version_id FROM project_config_values

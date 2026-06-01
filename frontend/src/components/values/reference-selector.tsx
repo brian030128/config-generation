@@ -57,11 +57,13 @@ export function ReferenceSelector({
 }
 
 // Parse a reference string like "${group.key}" into {group, key}
+const REFERENCE_RE = /^\$\{(\w+)\.(\w+)\}$/
+
 export function parseReference(value: string): {
   group: string
   key: string
 } | null {
-  const match = value.match(/^\$\{(\w+)\.(\w+)\}$/)
+  const match = REFERENCE_RE.exec(value)
   if (!match) return null
   return { group: match[1], key: match[2] }
 }
