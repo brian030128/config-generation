@@ -3,7 +3,14 @@ FROM node:23-alpine AS builder
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm install
-COPY . .
+# Copy only the files required by `vite build` to avoid pulling unrelated
+# project metadata into the build context (Sonar S6471).
+COPY index.html ./
+COPY vite.config.ts ./
+COPY tsconfig.json tsconfig.app.json tsconfig.node.json ./
+COPY components.json ./
+COPY public ./public
+COPY src ./src
 RUN npm run build
 
 # NOTE: This image runs as root because nginx must bind to privileged port 80

@@ -38,7 +38,8 @@ const FULL_REQ_RE = /^\d{1,9}[ \t]{0,8}x[ \t]{0,8}\S{1,256}$/i
 export function isWellFormed(condition: string): boolean {
   const trimmed = condition.trim()
   if (!trimmed) return false
-  const parts = trimmed.split(/\s+(?:AND|OR)\s+/i)
+  // Bounded whitespace prevents catastrophic backtracking on adversarial input.
+  const parts = trimmed.split(/[ \t]{1,8}(?:AND|OR)[ \t]{1,8}/i)
   return parts.every((p) => FULL_REQ_RE.test(p.trim()))
 }
 
