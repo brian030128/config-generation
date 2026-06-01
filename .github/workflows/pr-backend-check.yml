@@ -6,6 +6,16 @@ on:
       - "backend/**"
       - "sonar-project.properties"
       - ".github/workflows/pr-backend-check.yml"
+  # Also run on push to main so SonarCloud's "Overall code" view receives a
+  # fresh coverage report after every merge. Without a main-branch scan, the
+  # Overall coverage / new-code baseline stays empty ("No data available").
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - "sonar-project.properties"
+      - ".github/workflows/pr-backend-check.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
