@@ -112,23 +112,34 @@ func (h *EnvAdminHandler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, models.ListResponse[models.EnvAdmin]{Items: admins, Count: len(admins)})
 }
 
-// Add grants env-admin on the environment to a user.
-func (h *EnvAdminHandler) Add(w http.ResponseWriter, r *http.Request) {
+// resolveAndAuth resolves the (projectName, envName) URL params to an envID
+// and checks that the current user may manage the env's admins (via canManage).
+// On error it writes the standard 404/403/500 response and returns ok=false.
+func (h *EnvAdminHandler) resolveAndAuth(w http.ResponseWriter, r *http.Request) (envID, actorID int64, ok bool) {
 	projectName := chi.URLParam(r, "projectName")
 	envName := chi.URLParam(r, "envName")
-	envID, ok := h.resolveEnv(w, r, projectName, envName)
+	envID, ok = h.resolveEnv(w, r, projectName, envName)
 	if !ok {
-		return
+		return 0, 0, false
 	}
 
 	actor := currentUser(r)
 	allowed, err := h.canManage(r.Context(), actor.UserID, envID, projectName)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "permission check failed", "internal")
-		return
+		return 0, 0, false
 	}
 	if !allowed {
 		writeError(w, http.StatusForbidden, "insufficient permissions", "forbidden")
+		return 0, 0, false
+	}
+	return envID, actor.UserID, true
+}
+
+// Add grants env-admin on the environment to a user.
+func (h *EnvAdminHandler) Add(w http.ResponseWriter, r *http.Request) {
+	envID, actorID, ok := h.resolveAndAuth(w, r)
+	if !ok {
 		return
 	}
 
@@ -154,14 +165,14 @@ func (h *EnvAdminHandler) Add(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var a models.EnvAdmin
-	err = h.DB.QueryRowContext(r.Context(), `
+	err := h.DB.QueryRowContext(r.Context(), `
 		WITH inserted AS (
 			INSERT INTO env_admins (environment_id, user_id, granted_by) VALUES ($1, $2, $3)
 			RETURNING user_id, granted_by, granted_at
 		)
 		SELECT i.user_id, u.username, u.display_name, i.granted_by, i.granted_at
 		FROM inserted i JOIN users u ON u.id = i.user_id
-	`, envID, req.UserID, actor.UserID).Scan(&a.UserID, &a.Username, &a.DisplayName, &a.GrantedBy, &a.GrantedAt)
+	`, envID, req.UserID, actorID).Scan(&a.UserID, &a.Username, &a.DisplayName, &a.GrantedBy, &a.GrantedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
 			writeError(w, http.StatusConflict, "user is already an admin of this environment", "conflict")
@@ -177,21 +188,8 @@ func (h *EnvAdminHandler) Add(w http.ResponseWriter, r *http.Request) {
 // Remove revokes env-admin on the environment from a user. The sole remaining
 // admin cannot be removed (so an environment is never left adminless).
 func (h *EnvAdminHandler) Remove(w http.ResponseWriter, r *http.Request) {
-	projectName := chi.URLParam(r, "projectName")
-	envName := chi.URLParam(r, "envName")
-	envID, ok := h.resolveEnv(w, r, projectName, envName)
+	envID, _, ok := h.resolveAndAuth(w, r)
 	if !ok {
-		return
-	}
-
-	actor := currentUser(r)
-	allowed, err := h.canManage(r.Context(), actor.UserID, envID, projectName)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "permission check failed", "internal")
-		return
-	}
-	if !allowed {
-		writeError(w, http.StatusForbidden, "insufficient permissions", "forbidden")
 		return
 	}
 

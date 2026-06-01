@@ -3,7 +3,6 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -73,12 +72,7 @@ func (h *GlobalValuesHandler) Create(w http.ResponseWriter, r *http.Request) {
 		cond = *req.ApprovalCondition
 	}
 	if err := validateApprovalCondition(r.Context(), h.DB, []string{adminRoleName}, cond); err != nil {
-		var vErr *approvalConditionError
-		if errors.As(err, &vErr) {
-			writeError(w, http.StatusBadRequest, vErr.msg, "validation")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
+		writeApprovalConditionError(w, err)
 		return
 	}
 
@@ -247,12 +241,7 @@ func (h *GlobalValuesHandler) UpdateApprovalCondition(w http.ResponseWriter, r *
 	}
 
 	if err := validateApprovalCondition(r.Context(), h.DB, []string{name + "_gv_group_admin"}, req.ApprovalCondition); err != nil {
-		var vErr *approvalConditionError
-		if errors.As(err, &vErr) {
-			writeError(w, http.StatusBadRequest, vErr.msg, "validation")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
+		writeApprovalConditionError(w, err)
 		return
 	}
 

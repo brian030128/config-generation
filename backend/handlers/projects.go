@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"database/sql"
-	"errors"
 	"net/http"
 	"strings"
 
@@ -38,12 +37,7 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 		cond = *req.ApprovalCondition
 	}
 	if err := validateApprovalCondition(r.Context(), h.DB, []string{adminRoleName}, cond); err != nil {
-		var vErr *approvalConditionError
-		if errors.As(err, &vErr) {
-			writeError(w, http.StatusBadRequest, vErr.msg, "validation")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
+		writeApprovalConditionError(w, err)
 		return
 	}
 
@@ -160,12 +154,7 @@ func (h *ProjectHandler) UpdateApprovalCondition(w http.ResponseWriter, r *http.
 	}
 
 	if err := validateApprovalCondition(r.Context(), h.DB, []string{projectName + "_project_admin"}, req.ApprovalCondition); err != nil {
-		var vErr *approvalConditionError
-		if errors.As(err, &vErr) {
-			writeError(w, http.StatusBadRequest, vErr.msg, "validation")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
+		writeApprovalConditionError(w, err)
 		return
 	}
 
