@@ -604,17 +604,23 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 				}
 				if c.Operation == "delete" {
 					// Tear down the env's value sets and env-admin grants first
-					// (FK), then the env itself.
-					envSubquery := `(SELECT id FROM environments WHERE project_id = $1 AND name = $2)`
+					// (FK), then the env itself. The environment id is resolved
+					// inside a single SQL literal (no concatenation) using a
+					// parameterised subquery to satisfy static SQL-injection scans.
 					if _, err = tx.ExecContext(r.Context(), `
 						DELETE FROM project_config_values
-						WHERE project_id = $1 AND environment_id = `+envSubquery,
+						WHERE project_id = $1
+						  AND environment_id = (
+							SELECT id FROM environments WHERE project_id = $1 AND name = $2
+						)`,
 						*c.ProjectID, *c.EnvironmentName); err != nil {
 						writeError(w, http.StatusInternalServerError, "failed to apply change", "internal")
 						return
 					}
 					if _, err = tx.ExecContext(r.Context(), `
-						DELETE FROM env_admins WHERE environment_id = `+envSubquery,
+						DELETE FROM env_admins WHERE environment_id = (
+							SELECT id FROM environments WHERE project_id = $1 AND name = $2
+						)`,
 						*c.ProjectID, *c.EnvironmentName); err != nil {
 						writeError(w, http.StatusInternalServerError, "failed to apply change", "internal")
 						return
