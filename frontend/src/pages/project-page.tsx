@@ -78,7 +78,7 @@ export default function ProjectPage({ tab = "templates" }: Readonly<{ tab?: Proj
             <div className="max-w-2xl space-y-3">
               <ApprovalPolicyCard
                 kind="project"
-                name={name!}
+                name={name}
                 currentCondition={project.approval_condition}
               />
               <p className="text-sm text-muted-foreground">

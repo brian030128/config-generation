@@ -187,6 +187,71 @@ func parseApprovalCondition(condition string) []roleRequirement {
 	return reqs
 }
 
+// loadApproverRoles returns each approver's set of global role names.
+func (h *PullRequestHandler) loadApproverRoles(ctx context.Context, approvals []models.PRApproval) (map[int64][]string, error) {
+	approverRoles := make(map[int64][]string, len(approvals))
+	for _, a := range approvals {
+		roles, err := h.userRoleNames(ctx, a.UserID)
+		if err != nil {
+			return nil, err
+		}
+		approverRoles[a.UserID] = roles
+	}
+	return approverRoles, nil
+}
+
+// userRoleNames fetches the global role names held by a user.
+func (h *PullRequestHandler) userRoleNames(ctx context.Context, userID int64) ([]string, error) {
+	rows, err := h.DB.QueryContext(ctx,
+		`SELECT r.name FROM roles r
+		 JOIN user_roles ur ON ur.role_id = r.id
+		 WHERE ur.user_id = $1`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var roles []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		roles = append(roles, name)
+	}
+	return roles, rows.Err()
+}
+
+// requirementsMet reports whether the set of approverRoles satisfies all
+// requirements (AND) or any one of them (OR).
+func requirementsMet(reqs []roleRequirement, approverRoles map[int64][]string, isAnd bool) bool {
+	countApprovers := func(reqName string) int {
+		n := 0
+		for _, roles := range approverRoles {
+			for _, r := range roles {
+				if r == reqName {
+					n++
+					break
+				}
+			}
+		}
+		return n
+	}
+	if isAnd {
+		for _, req := range reqs {
+			if countApprovers(req.RoleName) < req.Count {
+				return false
+			}
+		}
+		return true
+	}
+	for _, req := range reqs {
+		if countApprovers(req.RoleName) >= req.Count {
+			return true
+		}
+	}
+	return false
+}
+
 // checkApprovalConditionMet checks if the approval condition is satisfied
 // by the current approvals. It queries role membership for each approver.
 func (h *PullRequestHandler) checkApprovalConditionMet(ctx context.Context, pr *models.PullRequest, condition string, approvals []models.PRApproval) (bool, error) {
@@ -195,68 +260,15 @@ func (h *PullRequestHandler) checkApprovalConditionMet(ctx context.Context, pr *
 		return true, nil
 	}
 
-	// Roles are global; an approver satisfies a requirement by holding a role
-	// whose name exactly matches it (role names are globally unique).
-	approverRoles := make(map[int64][]string)
-	for _, a := range approvals {
-		rows, err := h.DB.QueryContext(ctx,
-			`SELECT r.name FROM roles r
-			 JOIN user_roles ur ON ur.role_id = r.id
-			 WHERE ur.user_id = $1`,
-			a.UserID)
-		if err != nil {
-			return false, err
-		}
-		var roles []string
-		for rows.Next() {
-			var name string
-			if err := rows.Scan(&name); err != nil {
-				rows.Close()
-				return false, err
-			}
-			roles = append(roles, name)
-		}
-		rows.Close()
-		approverRoles[a.UserID] = roles
-	}
-
-	holds := func(userRoles []string, reqName string) bool {
-		for _, r := range userRoles {
-			if r == reqName {
-				return true
-			}
-		}
-		return false
-	}
-	countApprovers := func(reqName string) int {
-		n := 0
-		for _, roles := range approverRoles {
-			if holds(roles, reqName) {
-				n++
-			}
-		}
-		return n
+	approverRoles, err := h.loadApproverRoles(ctx, approvals)
+	if err != nil {
+		return false, err
 	}
 
 	// AND semantics: all requirements must be met (the default and for a single
 	// requirement). OR: at least one.
 	isAnd := strings.Contains(strings.ToUpper(condition), "AND") || len(reqs) == 1
-
-	if isAnd {
-		for _, req := range reqs {
-			if countApprovers(req.RoleName) < req.Count {
-				return false, nil
-			}
-		}
-		return true, nil
-	}
-
-	for _, req := range reqs {
-		if countApprovers(req.RoleName) >= req.Count {
-			return true, nil
-		}
-	}
-	return false, nil
+	return requirementsMet(reqs, approverRoles, isAnd), nil
 }
 
 func (h *PullRequestHandler) Approve(w http.ResponseWriter, r *http.Request) {
@@ -515,6 +527,283 @@ func (h *PullRequestHandler) Close(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, pr)
 }
 
+// prMergeOrderedTypes is the apply order; environments come first so values
+// can FK to them, and templates before values because values may refer to them.
+var prMergeOrderedTypes = []string{"environment", "global_values", "template", "values"}
+
+// loadAndLockPRForMerge fetches the PR with a row lock and validates that it
+// is eligible to be merged by the given user.
+func loadAndLockPRForMerge(ctx context.Context, tx *sql.Tx, prID, userID int64) (models.PullRequest, int, string, string) {
+	var pr models.PullRequest
+	err := tx.QueryRowContext(ctx, `
+		SELECT id, project_id, global_values_name, author_id, title, description, status,
+		       is_conflicted, created_at, updated_at, merged_at, closed_at
+		FROM pull_requests WHERE id = $1 FOR UPDATE
+	`, prID).Scan(
+		&pr.ID, &pr.ProjectID, &pr.GlobalValuesName, &pr.AuthorID, &pr.Title, &pr.Description,
+		&pr.Status, &pr.IsConflicted, &pr.CreatedAt, &pr.UpdatedAt,
+		&pr.MergedAt, &pr.ClosedAt,
+	)
+	if err == sql.ErrNoRows {
+		return pr, http.StatusNotFound, msgPullRequestNotFound, "not_found"
+	}
+	if err != nil {
+		return pr, http.StatusInternalServerError, msgDatabaseError, "internal"
+	}
+	if pr.AuthorID != userID {
+		return pr, http.StatusForbidden, "only the PR author can merge", "forbidden"
+	}
+	if pr.Status != "approved" {
+		return pr, http.StatusConflict, "pull request must be approved before merging", "conflict"
+	}
+	if pr.IsConflicted {
+		return pr, http.StatusConflict, "pull request has conflicts and cannot be merged", "conflict"
+	}
+	return pr, 0, "", ""
+}
+
+// loadPRChangesTx reads all pr_changes rows for the PR inside a transaction.
+func loadPRChangesTx(ctx context.Context, tx *sql.Tx, prID int64) ([]models.PRChange, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, pr_id, object_type, operation, project_id, template_name,
+		       environment_name, global_values_name, base_version_id,
+		       proposed_payload, created_at
+		FROM pr_changes WHERE pr_id = $1
+	`, prID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var changes []models.PRChange
+	for rows.Next() {
+		var c models.PRChange
+		if err := rows.Scan(
+			&c.ID, &c.PRID, &c.ObjectType, &c.Operation, &c.ProjectID, &c.TemplateName,
+			&c.EnvironmentName, &c.GlobalValuesName, &c.BaseVersionID,
+			&c.ProposedPayload, &c.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		changes = append(changes, c)
+	}
+	return changes, rows.Err()
+}
+
+// applyPRChanges replays each PR change against the live tables, in the
+// type-ordered passes required by FK dependencies.
+func applyPRChanges(ctx context.Context, tx *sql.Tx, changes []models.PRChange, authorID int64, commitMsg string) (int, string, string) {
+	for _, objType := range prMergeOrderedTypes {
+		for _, c := range changes {
+			if c.ObjectType != objType {
+				continue
+			}
+			if status, msg, code := applyPRChange(ctx, tx, c, authorID, commitMsg); status != 0 {
+				return status, msg, code
+			}
+		}
+	}
+	return 0, "", ""
+}
+
+// applyPRChange dispatches a single change to the per-type apply function.
+func applyPRChange(ctx context.Context, tx *sql.Tx, c models.PRChange, authorID int64, commitMsg string) (int, string, string) {
+	var err error
+	switch c.ObjectType {
+	case "environment":
+		err = applyEnvironmentChange(ctx, tx, c, authorID)
+	case "global_values":
+		err = applyGlobalValuesChange(ctx, tx, c, authorID, commitMsg)
+	case "template":
+		err = applyTemplateChange(ctx, tx, c, authorID, commitMsg)
+	case "values":
+		return applyValuesChange(ctx, tx, c, authorID, commitMsg)
+	}
+	if err != nil {
+		return http.StatusInternalServerError, msgFailedToApplyChange, "internal"
+	}
+	return 0, "", ""
+}
+
+func applyEnvironmentChange(ctx context.Context, tx *sql.Tx, c models.PRChange, authorID int64) error {
+	if c.ProjectID == nil || c.EnvironmentName == nil {
+		return nil
+	}
+	if c.Operation == "delete" {
+		// Tear down the env's value sets and env-admin grants first (FK), then
+		// the env itself. The environment id is resolved inside a single SQL
+		// literal (no concatenation) using a parameterised subquery.
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM project_config_values
+			WHERE project_id = $1
+			  AND environment_id = (
+				SELECT id FROM environments WHERE project_id = $1 AND name = $2
+			)`,
+			*c.ProjectID, *c.EnvironmentName); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM env_admins WHERE environment_id = (
+				SELECT id FROM environments WHERE project_id = $1 AND name = $2
+			)`,
+			*c.ProjectID, *c.EnvironmentName); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `
+			DELETE FROM environments WHERE project_id = $1 AND name = $2
+		`, *c.ProjectID, *c.EnvironmentName)
+		return err
+	}
+	var envReq models.CreateEnvironmentRequest
+	if json.Unmarshal([]byte(c.ProposedPayload), &envReq) != nil {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO environments (project_id, name, description, created_by)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (project_id, name) DO NOTHING
+	`, *c.ProjectID, envReq.Name, envReq.Description, authorID); err != nil {
+		return err
+	}
+	// Seed the creator as the environment's first env-admin. Resolving the id
+	// via SELECT handles the ON CONFLICT DO NOTHING case above; the env_admins
+	// upsert is then a no-op too.
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO env_admins (environment_id, user_id, granted_by)
+		SELECT id, $3, $3 FROM environments WHERE project_id = $1 AND name = $2
+		ON CONFLICT (environment_id, user_id) DO NOTHING
+	`, *c.ProjectID, envReq.Name, authorID)
+	return err
+}
+
+func applyGlobalValuesChange(ctx context.Context, tx *sql.Tx, c models.PRChange, authorID int64, commitMsg string) error {
+	if c.GlobalValuesName == nil {
+		return nil
+	}
+	var nextVersion int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE(
+			(SELECT version_id FROM global_values
+			 WHERE name = $1 ORDER BY version_id DESC LIMIT 1 FOR UPDATE),
+		0) + 1
+	`, *c.GlobalValuesName).Scan(&nextVersion); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO global_values (name, version_id, payload, commit_message, approval_condition, created_by)
+		VALUES ($1, $2, $3, $4,
+			(SELECT approval_condition FROM global_values WHERE name = $1 ORDER BY version_id LIMIT 1),
+			$5)
+	`, *c.GlobalValuesName, nextVersion, c.ProposedPayload, commitMsg, authorID)
+	return err
+}
+
+func applyTemplateChange(ctx context.Context, tx *sql.Tx, c models.PRChange, authorID int64, commitMsg string) error {
+	if c.ProjectID == nil || c.TemplateName == nil {
+		return nil
+	}
+	if c.Operation == "delete" {
+		_, err := tx.ExecContext(ctx, `
+			DELETE FROM project_config_templates WHERE project_id = $1 AND template_name = $2
+		`, *c.ProjectID, *c.TemplateName)
+		return err
+	}
+	var nextVersion int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE(
+			(SELECT version_id FROM project_config_templates
+			 WHERE project_id = $1 AND template_name = $2
+			 ORDER BY version_id DESC LIMIT 1 FOR UPDATE),
+		0) + 1
+	`, *c.ProjectID, *c.TemplateName).Scan(&nextVersion); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO project_config_templates (project_id, template_name, version_id, body, commit_message, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, *c.ProjectID, *c.TemplateName, nextVersion, c.ProposedPayload, commitMsg, authorID)
+	return err
+}
+
+// applyValuesChange returns an HTTP-shaped error because a missing environment
+// during a non-delete values change is a 500 with a distinct message.
+func applyValuesChange(ctx context.Context, tx *sql.Tx, c models.PRChange, authorID int64, commitMsg string) (int, string, string) {
+	if c.ProjectID == nil || c.EnvironmentName == nil {
+		return 0, "", ""
+	}
+	var envID int64
+	err := tx.QueryRowContext(ctx, `
+		SELECT id FROM environments WHERE project_id = $1 AND name = $2
+	`, *c.ProjectID, *c.EnvironmentName).Scan(&envID)
+	if err == sql.ErrNoRows {
+		// If the env is gone (e.g. deleted in the same PR), a values delete is
+		// a no-op; anything else is an error.
+		if c.Operation == "delete" {
+			return 0, "", ""
+		}
+		return http.StatusInternalServerError, "environment not found during merge", "internal"
+	}
+	if err != nil {
+		return http.StatusInternalServerError, msgDatabaseError, "internal"
+	}
+	if c.Operation == "delete" {
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM project_config_values WHERE project_id = $1 AND environment_id = $2
+		`, *c.ProjectID, envID); err != nil {
+			return http.StatusInternalServerError, msgFailedToApplyChange, "internal"
+		}
+		return 0, "", ""
+	}
+	var nextVersion int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE(
+			(SELECT version_id FROM project_config_values
+			 WHERE project_id = $1 AND environment_id = $2
+			 ORDER BY version_id DESC LIMIT 1 FOR UPDATE),
+		0) + 1
+	`, *c.ProjectID, envID).Scan(&nextVersion); err != nil {
+		return http.StatusInternalServerError, msgDatabaseError, "internal"
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO project_config_values (project_id, environment_id, version_id, payload, commit_message, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, *c.ProjectID, envID, nextVersion, c.ProposedPayload, commitMsg, authorID); err != nil {
+		return http.StatusInternalServerError, msgFailedToApplyChange, "internal"
+	}
+	return 0, "", ""
+}
+
+// markPRMerged flips the PR to merged and refreshes pr from the returned row.
+func markPRMerged(ctx context.Context, tx *sql.Tx, prID int64, pr *models.PullRequest) error {
+	return tx.QueryRowContext(ctx, `
+		UPDATE pull_requests
+		SET status = 'merged', merged_at = NOW(), updated_at = NOW()
+		WHERE id = $1
+		RETURNING id, project_id, global_values_name, author_id, title, description, status,
+		          is_conflicted, created_at, updated_at, merged_at, closed_at
+	`, prID).Scan(
+		&pr.ID, &pr.ProjectID, &pr.GlobalValuesName, &pr.AuthorID, &pr.Title, &pr.Description,
+		&pr.Status, &pr.IsConflicted, &pr.CreatedAt, &pr.UpdatedAt,
+		&pr.MergedAt, &pr.ClosedAt,
+	)
+}
+
+// autoCloseSiblingPRs closes any other unmerged PR targeting the same global
+// values scope so the just-merged PR's changes become canonical.
+func autoCloseSiblingPRs(ctx context.Context, tx *sql.Tx, pr models.PullRequest, prID int64) error {
+	if pr.GlobalValuesName == nil {
+		return nil
+	}
+	_, err := tx.ExecContext(ctx, `
+		UPDATE pull_requests
+		SET status = 'closed', closed_at = NOW(), updated_at = NOW()
+		WHERE global_values_name = $1
+		  AND id != $2
+		  AND status IN ('draft', 'open', 'approved')
+	`, *pr.GlobalValuesName, prID)
+	return err
+}
+
 func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 	user := currentUser(r)
 	prID, err := urlParamInt64(r, "prID")
@@ -530,269 +819,32 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	// Load the PR with a row lock.
-	var pr models.PullRequest
-	err = tx.QueryRowContext(r.Context(), `
-		SELECT id, project_id, global_values_name, author_id, title, description, status,
-		       is_conflicted, created_at, updated_at, merged_at, closed_at
-		FROM pull_requests WHERE id = $1 FOR UPDATE
-	`, prID).Scan(
-		&pr.ID, &pr.ProjectID, &pr.GlobalValuesName, &pr.AuthorID, &pr.Title, &pr.Description,
-		&pr.Status, &pr.IsConflicted, &pr.CreatedAt, &pr.UpdatedAt,
-		&pr.MergedAt, &pr.ClosedAt,
-	)
-	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, msgPullRequestNotFound, "not_found")
+	pr, status, msg, code := loadAndLockPRForMerge(r.Context(), tx, prID, user.UserID)
+	if status != 0 {
+		writeError(w, status, msg, code)
 		return
 	}
+
+	changes, err := loadPRChangesTx(r.Context(), tx, prID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
-	// Only the author can merge.
-	if pr.AuthorID != user.UserID {
-		writeError(w, http.StatusForbidden, "only the PR author can merge", "forbidden")
-		return
-	}
-
-	// PR must be approved.
-	if pr.Status != "approved" {
-		writeError(w, http.StatusConflict, "pull request must be approved before merging", "conflict")
-		return
-	}
-
-	if pr.IsConflicted {
-		writeError(w, http.StatusConflict, "pull request has conflicts and cannot be merged", "conflict")
-		return
-	}
-
-	// Load changes.
-	changeRows, err := tx.QueryContext(r.Context(), `
-		SELECT id, pr_id, object_type, operation, project_id, template_name,
-		       environment_name, global_values_name, base_version_id,
-		       proposed_payload, created_at
-		FROM pr_changes WHERE pr_id = $1
-	`, prID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
-		return
-	}
-	defer changeRows.Close()
-
-	var changes []models.PRChange
-	for changeRows.Next() {
-		var c models.PRChange
-		if err := changeRows.Scan(
-			&c.ID, &c.PRID, &c.ObjectType, &c.Operation, &c.ProjectID, &c.TemplateName,
-			&c.EnvironmentName, &c.GlobalValuesName, &c.BaseVersionID,
-			&c.ProposedPayload, &c.CreatedAt,
-		); err != nil {
-			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
-			return
-		}
-		changes = append(changes, c)
-	}
-	changeRows.Close()
-
-	// Apply changes in order: environments first, then templates, then values.
-	// This ensures environments exist before values reference them.
 	commitMsg := fmt.Sprintf("Merged from PR #%d", pr.ID)
-
-	// Order: environment → global_values → template → values
-	orderedTypes := []string{"environment", "global_values", "template", "values"}
-	for _, objType := range orderedTypes {
-		for _, c := range changes {
-			if c.ObjectType != objType {
-				continue
-			}
-
-			switch c.ObjectType {
-			case "environment":
-				if c.ProjectID == nil || c.EnvironmentName == nil {
-					continue
-				}
-				if c.Operation == "delete" {
-					// Tear down the env's value sets and env-admin grants first
-					// (FK), then the env itself. The environment id is resolved
-					// inside a single SQL literal (no concatenation) using a
-					// parameterised subquery to satisfy static SQL-injection scans.
-					if _, err = tx.ExecContext(r.Context(), `
-						DELETE FROM project_config_values
-						WHERE project_id = $1
-						  AND environment_id = (
-							SELECT id FROM environments WHERE project_id = $1 AND name = $2
-						)`,
-						*c.ProjectID, *c.EnvironmentName); err != nil {
-						writeError(w, http.StatusInternalServerError, msgFailedToApplyChange, "internal")
-						return
-					}
-					if _, err = tx.ExecContext(r.Context(), `
-						DELETE FROM env_admins WHERE environment_id = (
-							SELECT id FROM environments WHERE project_id = $1 AND name = $2
-						)`,
-						*c.ProjectID, *c.EnvironmentName); err != nil {
-						writeError(w, http.StatusInternalServerError, msgFailedToApplyChange, "internal")
-						return
-					}
-					_, err = tx.ExecContext(r.Context(), `
-						DELETE FROM environments WHERE project_id = $1 AND name = $2
-					`, *c.ProjectID, *c.EnvironmentName)
-					break
-				}
-				var envReq models.CreateEnvironmentRequest
-				if json.Unmarshal([]byte(c.ProposedPayload), &envReq) != nil {
-					continue
-				}
-				if _, err = tx.ExecContext(r.Context(), `
-					INSERT INTO environments (project_id, name, description, created_by)
-					VALUES ($1, $2, $3, $4)
-					ON CONFLICT (project_id, name) DO NOTHING
-				`, *c.ProjectID, envReq.Name, envReq.Description, pr.AuthorID); err != nil {
-					writeError(w, http.StatusInternalServerError, msgFailedToApplyChange, "internal")
-					return
-				}
-				// Seed the creator as the environment's first env-admin. Resolving
-				// the id via SELECT handles the ON CONFLICT DO NOTHING case (env
-				// already existed); the env_admins upsert is then a no-op too.
-				_, err = tx.ExecContext(r.Context(), `
-					INSERT INTO env_admins (environment_id, user_id, granted_by)
-					SELECT id, $3, $3 FROM environments WHERE project_id = $1 AND name = $2
-					ON CONFLICT (environment_id, user_id) DO NOTHING
-				`, *c.ProjectID, envReq.Name, pr.AuthorID)
-
-			case "global_values":
-				if c.GlobalValuesName == nil {
-					continue
-				}
-				var nextVersion int
-				err = tx.QueryRowContext(r.Context(), `
-					SELECT COALESCE(
-						(SELECT version_id FROM global_values
-						 WHERE name = $1 ORDER BY version_id DESC LIMIT 1 FOR UPDATE),
-					0) + 1
-				`, *c.GlobalValuesName).Scan(&nextVersion)
-				if err != nil {
-					writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
-					return
-				}
-				_, err = tx.ExecContext(r.Context(), `
-					INSERT INTO global_values (name, version_id, payload, commit_message, approval_condition, created_by)
-					VALUES ($1, $2, $3, $4,
-						(SELECT approval_condition FROM global_values WHERE name = $1 ORDER BY version_id LIMIT 1),
-						$5)
-				`, *c.GlobalValuesName, nextVersion, c.ProposedPayload, commitMsg, pr.AuthorID)
-
-			case "template":
-				if c.ProjectID == nil || c.TemplateName == nil {
-					continue
-				}
-				if c.Operation == "delete" {
-					_, err = tx.ExecContext(r.Context(), `
-						DELETE FROM project_config_templates WHERE project_id = $1 AND template_name = $2
-					`, *c.ProjectID, *c.TemplateName)
-					break
-				}
-				var nextVersion int
-				err = tx.QueryRowContext(r.Context(), `
-					SELECT COALESCE(
-						(SELECT version_id FROM project_config_templates
-						 WHERE project_id = $1 AND template_name = $2
-						 ORDER BY version_id DESC LIMIT 1 FOR UPDATE),
-					0) + 1
-				`, *c.ProjectID, *c.TemplateName).Scan(&nextVersion)
-				if err != nil {
-					writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
-					return
-				}
-				_, err = tx.ExecContext(r.Context(), `
-					INSERT INTO project_config_templates (project_id, template_name, version_id, body, commit_message, created_by)
-					VALUES ($1, $2, $3, $4, $5, $6)
-				`, *c.ProjectID, *c.TemplateName, nextVersion, c.ProposedPayload, commitMsg, pr.AuthorID)
-
-			case "values":
-				if c.ProjectID == nil || c.EnvironmentName == nil {
-					continue
-				}
-				// Resolve environment name to ID (environment was created earlier in this merge or already exists).
-				var envID int64
-				err = tx.QueryRowContext(r.Context(), `
-					SELECT id FROM environments WHERE project_id = $1 AND name = $2
-				`, *c.ProjectID, *c.EnvironmentName).Scan(&envID)
-				if err == sql.ErrNoRows {
-					// If the env is gone (e.g. deleted in the same PR), a values
-					// delete is a no-op; anything else is an error.
-					if c.Operation == "delete" {
-						continue
-					}
-					writeError(w, http.StatusInternalServerError, "environment not found during merge", "internal")
-					return
-				}
-				if err != nil {
-					writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
-					return
-				}
-				if c.Operation == "delete" {
-					_, err = tx.ExecContext(r.Context(), `
-						DELETE FROM project_config_values WHERE project_id = $1 AND environment_id = $2
-					`, *c.ProjectID, envID)
-					break
-				}
-				var nextVersion int
-				err = tx.QueryRowContext(r.Context(), `
-					SELECT COALESCE(
-						(SELECT version_id FROM project_config_values
-						 WHERE project_id = $1 AND environment_id = $2
-						 ORDER BY version_id DESC LIMIT 1 FOR UPDATE),
-					0) + 1
-				`, *c.ProjectID, envID).Scan(&nextVersion)
-				if err != nil {
-					writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
-					return
-				}
-				_, err = tx.ExecContext(r.Context(), `
-					INSERT INTO project_config_values (project_id, environment_id, version_id, payload, commit_message, created_by)
-					VALUES ($1, $2, $3, $4, $5, $6)
-				`, *c.ProjectID, envID, nextVersion, c.ProposedPayload, commitMsg, pr.AuthorID)
-			}
-
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, msgFailedToApplyChange, "internal")
-				return
-			}
-		}
+	if status, msg, code := applyPRChanges(r.Context(), tx, changes, pr.AuthorID, commitMsg); status != 0 {
+		writeError(w, status, msg, code)
+		return
 	}
 
-	// Mark the PR as merged.
-	err = tx.QueryRowContext(r.Context(), `
-		UPDATE pull_requests
-		SET status = 'merged', merged_at = NOW(), updated_at = NOW()
-		WHERE id = $1
-		RETURNING id, project_id, global_values_name, author_id, title, description, status,
-		          is_conflicted, created_at, updated_at, merged_at, closed_at
-	`, prID).Scan(
-		&pr.ID, &pr.ProjectID, &pr.GlobalValuesName, &pr.AuthorID, &pr.Title, &pr.Description,
-		&pr.Status, &pr.IsConflicted, &pr.CreatedAt, &pr.UpdatedAt,
-		&pr.MergedAt, &pr.ClosedAt,
-	)
-	if err != nil {
+	if err := markPRMerged(r.Context(), tx, prID, &pr); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update pull request", "internal")
 		return
 	}
 
-	// Auto-close other unmerged PRs on the same scope.
-	if pr.GlobalValuesName != nil {
-		_, err = tx.ExecContext(r.Context(), `
-			UPDATE pull_requests
-			SET status = 'closed', closed_at = NOW(), updated_at = NOW()
-			WHERE global_values_name = $1
-			  AND id != $2
-			  AND status IN ('draft', 'open', 'approved')
-		`, *pr.GlobalValuesName, prID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to auto-close other PRs", "internal")
-			return
-		}
+	if err := autoCloseSiblingPRs(r.Context(), tx, pr, prID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to auto-close other PRs", "internal")
+		return
 	}
 
 	if err := tx.Commit(); err != nil {

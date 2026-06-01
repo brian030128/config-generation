@@ -549,7 +549,14 @@ func (h *PullRequestHandler) stagedChangesByKey(ctx context.Context, projectID, 
 // effectiveTemplates returns the workspace overlay templates: live latest of
 // each template merged with the caller's staged changes, with staged deletes
 // hidden. Staged-new templates have VersionID 0.
-func (h *PullRequestHandler) effectiveTemplates(ctx context.Context, projectID, userID int64) ([]models.WorkspaceTemplateItem, error) {
+type liveTmpl struct {
+	version int
+	body    string
+}
+
+// loadLiveTemplates returns the latest body+version for each template in the
+// project, plus the deterministic name order to merge against.
+func (h *PullRequestHandler) loadLiveTemplates(ctx context.Context, projectID int64) (map[string]liveTmpl, []string, error) {
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT DISTINCT ON (template_name) template_name, version_id, body
 		FROM project_config_templates
@@ -557,34 +564,27 @@ func (h *PullRequestHandler) effectiveTemplates(ctx context.Context, projectID, 
 		ORDER BY template_name, version_id DESC
 	`, projectID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer rows.Close()
 
-	type liveTmpl struct {
-		version int
-		body    string
-	}
 	live := map[string]liveTmpl{}
 	var order []string
 	for rows.Next() {
 		var name, body string
 		var version int
 		if err := rows.Scan(&name, &version, &body); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		live[name] = liveTmpl{version: version, body: body}
 		order = append(order, name)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
+	return live, order, rows.Err()
+}
 
-	staged, err := h.stagedChangesByKey(ctx, projectID, userID, "template")
-	if err != nil {
-		return nil, err
-	}
-
+// mergeTemplateOverlay folds staged changes over the live templates and
+// appends any staged-new templates.
+func mergeTemplateOverlay(order []string, live map[string]liveTmpl, staged map[string]models.PRChange) []models.WorkspaceTemplateItem {
 	items := []models.WorkspaceTemplateItem{}
 	for _, name := range order {
 		c, ok := staged[name]
@@ -611,7 +611,19 @@ func (h *PullRequestHandler) effectiveTemplates(ctx context.Context, projectID, 
 			TemplateName: name, Body: c.ProposedPayload, VersionID: 0, Staged: true, Operation: c.Operation,
 		})
 	}
-	return items, nil
+	return items
+}
+
+func (h *PullRequestHandler) effectiveTemplates(ctx context.Context, projectID, userID int64) ([]models.WorkspaceTemplateItem, error) {
+	live, order, err := h.loadLiveTemplates(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	staged, err := h.stagedChangesByKey(ctx, projectID, userID, "template")
+	if err != nil {
+		return nil, err
+	}
+	return mergeTemplateOverlay(order, live, staged), nil
 }
 
 func (h *PullRequestHandler) OverlayTemplates(w http.ResponseWriter, r *http.Request) {
@@ -687,14 +699,13 @@ func (h *PullRequestHandler) OverlayTemplate(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-// effectiveEnvironments returns the workspace overlay environments: live
-// environments merged with the caller's staged changes, with staged deletes
-// hidden.
-func (h *PullRequestHandler) effectiveEnvironments(ctx context.Context, projectID, userID int64) ([]models.WorkspaceEnvironmentItem, error) {
+// loadLiveEnvironments returns the set + ordered list of environment names
+// that live on disk for the project.
+func (h *PullRequestHandler) loadLiveEnvironments(ctx context.Context, projectID int64) (map[string]bool, []string, error) {
 	rows, err := h.DB.QueryContext(ctx,
 		`SELECT name FROM environments WHERE project_id = $1 ORDER BY name`, projectID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer rows.Close()
 
@@ -703,20 +714,16 @@ func (h *PullRequestHandler) effectiveEnvironments(ctx context.Context, projectI
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		live[name] = true
 		order = append(order, name)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
+	return live, order, rows.Err()
+}
 
-	staged, err := h.stagedChangesByKey(ctx, projectID, userID, "environment")
-	if err != nil {
-		return nil, err
-	}
-
+// mergeEnvironmentOverlay folds staged env changes over the live env list.
+func mergeEnvironmentOverlay(order []string, live map[string]bool, staged map[string]models.PRChange) []models.WorkspaceEnvironmentItem {
 	items := []models.WorkspaceEnvironmentItem{}
 	for _, name := range order {
 		c, ok := staged[name]
@@ -736,7 +743,22 @@ func (h *PullRequestHandler) effectiveEnvironments(ctx context.Context, projectI
 		}
 		items = append(items, models.WorkspaceEnvironmentItem{Name: name, Staged: true, Operation: c.Operation})
 	}
-	return items, nil
+	return items
+}
+
+// effectiveEnvironments returns the workspace overlay environments: live
+// environments merged with the caller's staged changes, with staged deletes
+// hidden.
+func (h *PullRequestHandler) effectiveEnvironments(ctx context.Context, projectID, userID int64) ([]models.WorkspaceEnvironmentItem, error) {
+	live, order, err := h.loadLiveEnvironments(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	staged, err := h.stagedChangesByKey(ctx, projectID, userID, "environment")
+	if err != nil {
+		return nil, err
+	}
+	return mergeEnvironmentOverlay(order, live, staged), nil
 }
 
 func (h *PullRequestHandler) OverlayEnvironments(w http.ResponseWriter, r *http.Request) {

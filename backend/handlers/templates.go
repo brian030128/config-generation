@@ -317,47 +317,31 @@ func walkNode(node parse.Node, seen map[string]*models.TemplateVariable, order *
 	case *parse.ActionNode:
 		extractFromPipe(n.Pipe, seen, order)
 	case *parse.IfNode:
-		extractFromPipe(n.Pipe, seen, order)
-		if n.List != nil {
-			for _, child := range n.List.Nodes {
-				walkNode(child, seen, order)
-			}
-		}
-		if n.ElseList != nil {
-			for _, child := range n.ElseList.Nodes {
-				walkNode(child, seen, order)
-			}
-		}
+		walkBranchNode(n.Pipe, n.List, n.ElseList, seen, order)
 	case *parse.RangeNode:
-		extractFromPipe(n.Pipe, seen, order)
-		if n.List != nil {
-			for _, child := range n.List.Nodes {
-				walkNode(child, seen, order)
-			}
-		}
-		if n.ElseList != nil {
-			for _, child := range n.ElseList.Nodes {
-				walkNode(child, seen, order)
-			}
-		}
+		walkBranchNode(n.Pipe, n.List, n.ElseList, seen, order)
 	case *parse.WithNode:
-		extractFromPipe(n.Pipe, seen, order)
-		if n.List != nil {
-			for _, child := range n.List.Nodes {
-				walkNode(child, seen, order)
-			}
-		}
-		if n.ElseList != nil {
-			for _, child := range n.ElseList.Nodes {
-				walkNode(child, seen, order)
-			}
-		}
+		walkBranchNode(n.Pipe, n.List, n.ElseList, seen, order)
 	case *parse.ListNode:
-		if n != nil {
-			for _, child := range n.Nodes {
-				walkNode(child, seen, order)
-			}
-		}
+		walkList(n, seen, order)
+	}
+}
+
+// walkBranchNode handles the if/range/with shape: extract the pipe then
+// recurse into both branches.
+func walkBranchNode(pipe *parse.PipeNode, list, elseList *parse.ListNode, seen map[string]*models.TemplateVariable, order *[]string) {
+	extractFromPipe(pipe, seen, order)
+	walkList(list, seen, order)
+	walkList(elseList, seen, order)
+}
+
+// walkList recurses into every child of a (possibly nil) ListNode.
+func walkList(list *parse.ListNode, seen map[string]*models.TemplateVariable, order *[]string) {
+	if list == nil {
+		return
+	}
+	for _, child := range list.Nodes {
+		walkNode(child, seen, order)
 	}
 }
 
@@ -370,30 +354,53 @@ func extractFromPipe(pipe *parse.PipeNode, seen map[string]*models.TemplateVaria
 	var defaultVal *string
 
 	for _, cmd := range pipe.Cmds {
-		for _, arg := range cmd.Args {
-			if field, ok := arg.(*parse.FieldNode); ok {
-				if len(field.Ident) > 0 {
-					fieldName = field.Ident[0]
-				}
-			}
+		if name := extractFieldFromCmd(cmd); name != "" {
+			fieldName = name
 		}
-		// Check for default function: default "value" or default 123
-		if len(cmd.Args) >= 2 {
-			if ident, ok := cmd.Args[0].(*parse.IdentifierNode); ok && ident.Ident == "default" {
-				val := extractLiteral(cmd.Args[1])
-				if val != "" {
-					defaultVal = &val
-				}
-			}
+		if val := extractDefaultFromCmd(cmd); val != nil {
+			defaultVal = val
 		}
 	}
 
-	if fieldName != "" {
-		if _, exists := seen[fieldName]; !exists {
-			seen[fieldName] = &models.TemplateVariable{Name: fieldName, Default: defaultVal}
-			*order = append(*order, fieldName)
-		}
+	if fieldName == "" {
+		return
 	}
+	if _, exists := seen[fieldName]; exists {
+		return
+	}
+	seen[fieldName] = &models.TemplateVariable{Name: fieldName, Default: defaultVal}
+	*order = append(*order, fieldName)
+}
+
+// extractFieldFromCmd returns the last FieldNode identifier found in the
+// command's args (matching the original last-wins behaviour), or "" if none.
+func extractFieldFromCmd(cmd *parse.CommandNode) string {
+	var name string
+	for _, arg := range cmd.Args {
+		field, ok := arg.(*parse.FieldNode)
+		if !ok || len(field.Ident) == 0 {
+			continue
+		}
+		name = field.Ident[0]
+	}
+	return name
+}
+
+// extractDefaultFromCmd returns the literal arg of a `default "x"` call, or
+// nil if the command is not a recognised default call.
+func extractDefaultFromCmd(cmd *parse.CommandNode) *string {
+	if len(cmd.Args) < 2 {
+		return nil
+	}
+	ident, ok := cmd.Args[0].(*parse.IdentifierNode)
+	if !ok || ident.Ident != "default" {
+		return nil
+	}
+	val := extractLiteral(cmd.Args[1])
+	if val == "" {
+		return nil
+	}
+	return &val
 }
 
 func extractLiteral(node parse.Node) string {
