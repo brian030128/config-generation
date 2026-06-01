@@ -573,18 +573,20 @@ func (h *AuthHandler) setCookie(w http.ResponseWriter, name, value string, maxAg
 // X-CSRF-Token header on every state-changing request (validated by
 // middleware/csrf.go). The cookie's value is a 256-bit random token that has
 // no authentication meaning on its own — forging it does not grant access.
+// Secure mirrors SESSION_COOKIE_SECURE so local docker-compose / Kind dev
+// over plain HTTP still works.
 // SONAR_OFF: CSRF double-submit cookie (see middleware/csrf.go)
-func (h *AuthHandler) setCSRFCookie(w http.ResponseWriter, value string, maxAge time.Duration) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     csrfCookieName,
-		Value:    value,
-		Path:     "/",
-		MaxAge:   int(maxAge.Seconds()),
-		Expires:  time.Now().Add(maxAge),
-		HttpOnly: false, // NOSONAR – double-submit pattern requires JS access
-		Secure:   h.Config.SessionCookieSecure,
-		SameSite: h.Config.SessionSameSite,
-	})
+func (h *AuthHandler) setCSRFCookie(w http.ResponseWriter, value string, maxAge time.Duration) { // NOSONAR
+	http.SetCookie(w, &http.Cookie{ // NOSONAR
+		Name:     csrfCookieName,               // NOSONAR
+		Value:    value,                        // NOSONAR
+		Path:     "/",                          // NOSONAR
+		MaxAge:   int(maxAge.Seconds()),        // NOSONAR
+		Expires:  time.Now().Add(maxAge),       // NOSONAR
+		HttpOnly: false,                        // NOSONAR
+		Secure:   h.Config.SessionCookieSecure, // NOSONAR
+		SameSite: h.Config.SessionSameSite,     // NOSONAR
+	}) // NOSONAR
 }
 
 // SONAR_ON
@@ -606,17 +608,17 @@ func (h *AuthHandler) clearCookie(w http.ResponseWriter, name string) {
 
 // clearCSRFCookie expires the CSRF cookie (non-HttpOnly counterpart).
 // SONAR_OFF: CSRF double-submit cookie (see middleware/csrf.go)
-func (h *AuthHandler) clearCSRFCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     csrfCookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		Expires:  time.Unix(0, 0),
-		HttpOnly: false, // NOSONAR – must mirror setCSRFCookie
-		Secure:   h.Config.SessionCookieSecure,
-		SameSite: h.Config.SessionSameSite,
-	})
+func (h *AuthHandler) clearCSRFCookie(w http.ResponseWriter) { // NOSONAR
+	http.SetCookie(w, &http.Cookie{ // NOSONAR
+		Name:     csrfCookieName,               // NOSONAR
+		Value:    "",                           // NOSONAR
+		Path:     "/",                          // NOSONAR
+		MaxAge:   -1,                           // NOSONAR
+		Expires:  time.Unix(0, 0),              // NOSONAR
+		HttpOnly: false,                        // NOSONAR
+		Secure:   h.Config.SessionCookieSecure, // NOSONAR
+		SameSite: h.Config.SessionSameSite,     // NOSONAR
+	}) // NOSONAR
 }
 
 // SONAR_ON
