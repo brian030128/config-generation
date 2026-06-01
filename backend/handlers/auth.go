@@ -241,8 +241,8 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	h.clearCookie(w, h.Config.SessionCookieName, true)
-	h.clearCookie(w, csrfCookieName, false)
+	h.clearCookie(w, h.Config.SessionCookieName)
+	h.clearCSRFCookie(w)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -270,9 +270,9 @@ func (h *AuthHandler) OIDCLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	returnTo := safeReturnTo(r.URL.Query().Get("return_to"))
 
-	h.setCookie(w, oidcStateCookieName, state, true, 10*time.Minute)
-	h.setCookie(w, oidcNonceCookieName, nonce, true, 10*time.Minute)
-	h.setCookie(w, oidcReturnCookieName, returnTo, true, 10*time.Minute)
+	h.setCookie(w, oidcStateCookieName, state, 10*time.Minute)
+	h.setCookie(w, oidcNonceCookieName, nonce, 10*time.Minute)
+	h.setCookie(w, oidcReturnCookieName, returnTo, 10*time.Minute)
 
 	http.Redirect(w, r, oauthConfig.AuthCodeURL(state, oidc.Nonce(nonce)), http.StatusFound)
 }
@@ -346,9 +346,9 @@ func (h *AuthHandler) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.setSessionCookies(w, token)
-	h.clearCookie(w, oidcStateCookieName, true)
-	h.clearCookie(w, oidcNonceCookieName, true)
-	h.clearCookie(w, oidcReturnCookieName, true)
+	h.clearCookie(w, oidcStateCookieName)
+	h.clearCookie(w, oidcNonceCookieName)
+	h.clearCookie(w, oidcReturnCookieName)
 
 	returnTo := "/projects"
 	if cookie, err := r.Cookie(oidcReturnCookieName); err == nil {
@@ -545,23 +545,22 @@ func (h *AuthHandler) loadOIDCUserByIdentity(ctx context.Context, issuer, subjec
 }
 
 func (h *AuthHandler) setSessionCookies(w http.ResponseWriter, token string) {
-	h.setCookie(w, h.Config.SessionCookieName, token, true, 24*time.Hour)
+	h.setCookie(w, h.Config.SessionCookieName, token, 24*time.Hour)
 	if csrf, err := randomToken(); err == nil {
-		h.setCookie(w, csrfCookieName, csrf, false, 24*time.Hour)
+		h.setCSRFCookie(w, csrf, 24*time.Hour)
 	}
 }
 
-func (h *AuthHandler) setCookie(w http.ResponseWriter, name, value string, httpOnly bool, maxAge time.Duration) {
+// setCookie writes an HttpOnly cookie. Use this for all session/state tokens.
+// The CSRF double-submit cookie must NOT be HttpOnly — use setCSRFCookie.
+func (h *AuthHandler) setCookie(w http.ResponseWriter, name, value string, maxAge time.Duration) {
 	http.SetCookie(w, &http.Cookie{
-		Name:    name,
-		Value:   value,
-		Path:    "/",
-		MaxAge:  int(maxAge.Seconds()),
-		Expires: time.Now().Add(maxAge),
-		// HttpOnly is true for the session token but intentionally false for the
-		// CSRF cookie, which the frontend reads to populate the X-CSRF-Token
-		// header (double-submit pattern). Callers control this per cookie.
-		HttpOnly: httpOnly, // NOSONAR – see comment above
+		Name:     name,
+		Value:    value,
+		Path:     "/",
+		MaxAge:   int(maxAge.Seconds()),
+		Expires:  time.Now().Add(maxAge),
+		HttpOnly: true,
 		// Secure is driven by SESSION_COOKIE_SECURE env var: true in production
 		// (HTTPS), false only for local docker-compose / Kind dev over plain HTTP.
 		Secure:   h.Config.SessionCookieSecure, // NOSONAR – configurable per environment
@@ -569,18 +568,49 @@ func (h *AuthHandler) setCookie(w http.ResponseWriter, name, value string, httpO
 	})
 }
 
-func (h *AuthHandler) clearCookie(w http.ResponseWriter, name string, httpOnly bool) {
+// setCSRFCookie writes the CSRF double-submit cookie. It is intentionally
+// NOT HttpOnly because the frontend reads its value and echoes it back in the
+// X-CSRF-Token header on every state-changing request (validated by
+// middleware/csrf.go). The cookie's value is a 256-bit random token that has
+// no authentication meaning on its own — forging it does not grant access.
+func (h *AuthHandler) setCSRFCookie(w http.ResponseWriter, value string, maxAge time.Duration) {
 	http.SetCookie(w, &http.Cookie{
-		Name:    name,
-		Value:   "",
-		Path:    "/",
-		MaxAge:  -1,
-		Expires: time.Unix(0, 0),
-		// Mirror setCookie: HttpOnly is parameterised because the CSRF cookie
-		// must remain JS-readable for the double-submit pattern.
-		HttpOnly: httpOnly, // NOSONAR – see setCookie
+		Name:     csrfCookieName,
+		Value:    value,
+		Path:     "/",
+		MaxAge:   int(maxAge.Seconds()),
+		Expires:  time.Now().Add(maxAge),
+		HttpOnly: false, // NOSONAR – double-submit pattern requires JS access
+		Secure:   h.Config.SessionCookieSecure,
+		SameSite: h.Config.SessionSameSite,
+	})
+}
+
+// clearCookie expires an HttpOnly cookie.
+func (h *AuthHandler) clearCookie(w http.ResponseWriter, name string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     name,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+		HttpOnly: true,
 		// Must mirror setCookie so browsers actually clear the cookie in production HTTPS.
 		Secure:   h.Config.SessionCookieSecure, // NOSONAR – configurable per environment
+		SameSite: h.Config.SessionSameSite,
+	})
+}
+
+// clearCSRFCookie expires the CSRF cookie (non-HttpOnly counterpart).
+func (h *AuthHandler) clearCSRFCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     csrfCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+		HttpOnly: false, // NOSONAR – must mirror setCSRFCookie
+		Secure:   h.Config.SessionCookieSecure,
 		SameSite: h.Config.SessionSameSite,
 	})
 }
