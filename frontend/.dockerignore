@@ -1,2 +1,16 @@
+# Dependencies and build output (will be regenerated inside the image)
 node_modules
 dist
+
+# Version control / IDE
+.git
+.gitignore
+.idea
+.vscode
+
+# Local env / docs / tests
+.env
+.env.*
+*.md
+*.log
+coverage

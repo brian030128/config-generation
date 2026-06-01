@@ -277,9 +277,9 @@ func (h *RoleHandler) List(w http.ResponseWriter, r *http.Request) {
 	roleRows, err := h.DB.QueryContext(r.Context(), `
 		SELECT id, name, is_auto_created, created_at
 		FROM roles
-		WHERE NOT starts_with(name, '`+managedMemberRolePrefix+`')
+		WHERE NOT starts_with(name, $1)
 		ORDER BY name
-	`)
+	`, managedMemberRolePrefix)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "database error", "internal")
 		return

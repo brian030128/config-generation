@@ -15,7 +15,9 @@ export interface ApprovalValidation {
   requirements: ApprovalRequirement[]
 }
 
-const REQ_RE = /(\d+)\s*x\s*(\S+)/g
+// Quantifiers are bounded to keep the regex linear (no catastrophic
+// backtracking) for any input length.
+const REQ_RE = /(\d{1,9})[ \t]{0,8}x[ \t]{0,8}(\S{1,256})/g
 
 export function parseApprovalCondition(condition: string): ApprovalRequirement[] {
   const reqs: ApprovalRequirement[] = []
@@ -26,7 +28,8 @@ export function parseApprovalCondition(condition: string): ApprovalRequirement[]
 }
 
 // A single, complete requirement: "N x role" (role is any run of non-space chars).
-const FULL_REQ_RE = /^\d+\s*x\s*\S+$/i
+// Bounded quantifiers prevent ReDoS.
+const FULL_REQ_RE = /^\d{1,9}[ \t]{0,8}x[ \t]{0,8}\S{1,256}$/i
 
 // isWellFormed checks the whole condition is a sequence of complete "N x role"
 // requirements joined by AND/OR — with no dangling token (e.g. a trailing

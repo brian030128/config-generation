@@ -1,0 +1,19 @@
+# Version control / IDE
+.git
+.gitignore
+.idea
+.vscode
+
+# Build artifacts
+/server
+/migrate
+*.test
+*.out
+coverage.*
+
+# Local-only / dev files
+*.md
+Makefile
+bddtest/
+dbtest/
+.golangci.yml
