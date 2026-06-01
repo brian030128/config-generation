@@ -204,6 +204,75 @@ function ChangeCard({ change, projectName }: Readonly<{ change: PRChange; projec
   return <KvDiffCard change={change} />
 }
 
+// PRActionBar renders the bottom action buttons. Extracted so PRDetailPage
+// stays within Sonar's cognitive-complexity limit.
+function PRActionBar({
+  canClose,
+  canMerge,
+  isOpenForApproval,
+  hasApproved,
+  approvePR,
+  withdrawApproval,
+  mergePR,
+  closePR,
+  runPRAction,
+}: {
+  canClose: boolean
+  canMerge: boolean
+  isOpenForApproval: boolean
+  hasApproved: boolean
+  approvePR: { isPending: boolean }
+  withdrawApproval: { isPending: boolean }
+  mergePR: { isPending: boolean }
+  closePR: { isPending: boolean }
+  runPRAction: (
+    mutation: { mutate: (id: number, opts: { onSuccess: () => void; onError: (err: unknown) => void }) => void },
+    successMsg: string,
+    errorMsg: string,
+  ) => void
+}) {
+  if (!(canClose || canMerge || isOpenForApproval)) return null
+  return (
+    <div className="flex gap-3 border-t pt-4">
+      {isOpenForApproval && !hasApproved && (
+        <Button
+          variant="outline"
+          onClick={() => runPRAction(approvePR as never, "Pull request approved", "Failed to approve pull request")}
+          disabled={approvePR.isPending}
+        >
+          {approvePR.isPending ? "Approving..." : "Approve"}
+        </Button>
+      )}
+      {isOpenForApproval && hasApproved && (
+        <Button
+          variant="ghost"
+          onClick={() => runPRAction(withdrawApproval as never, "Approval withdrawn", "Failed to withdraw approval")}
+          disabled={withdrawApproval.isPending}
+        >
+          {withdrawApproval.isPending ? "Withdrawing..." : "Withdraw Approval"}
+        </Button>
+      )}
+      {canMerge && (
+        <Button
+          onClick={() => runPRAction(mergePR as never, "Pull request merged", "Failed to merge pull request")}
+          disabled={mergePR.isPending}
+        >
+          {mergePR.isPending ? "Merging..." : "Merge"}
+        </Button>
+      )}
+      {canClose && (
+        <Button
+          variant="destructive"
+          onClick={() => runPRAction(closePR as never, "Pull request closed", "Failed to close pull request")}
+          disabled={closePR.isPending}
+        >
+          {closePR.isPending ? "Closing..." : "Close PR"}
+        </Button>
+      )}
+    </div>
+  )
+}
+
 export default function PRDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -220,10 +289,9 @@ export default function PRDetailPage() {
 
   const canClose =
     pr && ["draft", "open", "approved"].includes(pr.status)
-  const canMerge =
-    pr && pr.status === "approved" && !pr.is_conflicted
+  const canMerge = pr?.status === "approved" && !pr.is_conflicted
   const isOpenForApproval =
-    pr && (pr.status === "open" || pr.status === "approved")
+    pr?.status === "open" || pr?.status === "approved"
   const hasApproved =
     user && pr?.approvals?.some((a) => a.user_id === user.id && !a.withdrawn_at)
 
@@ -351,45 +419,17 @@ export default function PRDetailPage() {
       </div>
 
       {/* Actions */}
-      {(canClose || canMerge || isOpenForApproval) && (
-        <div className="flex gap-3 border-t pt-4">
-          {isOpenForApproval && !hasApproved && (
-            <Button
-              variant="outline"
-              onClick={() => runPRAction(approvePR, "Pull request approved", "Failed to approve pull request")}
-              disabled={approvePR.isPending}
-            >
-              {approvePR.isPending ? "Approving..." : "Approve"}
-            </Button>
-          )}
-          {isOpenForApproval && hasApproved && (
-            <Button
-              variant="ghost"
-              onClick={() => runPRAction(withdrawApproval, "Approval withdrawn", "Failed to withdraw approval")}
-              disabled={withdrawApproval.isPending}
-            >
-              {withdrawApproval.isPending ? "Withdrawing..." : "Withdraw Approval"}
-            </Button>
-          )}
-          {canMerge && (
-            <Button
-              onClick={() => runPRAction(mergePR, "Pull request merged", "Failed to merge pull request")}
-              disabled={mergePR.isPending}
-            >
-              {mergePR.isPending ? "Merging..." : "Merge"}
-            </Button>
-          )}
-          {canClose && (
-            <Button
-              variant="destructive"
-              onClick={() => runPRAction(closePR, "Pull request closed", "Failed to close pull request")}
-              disabled={closePR.isPending}
-            >
-              {closePR.isPending ? "Closing..." : "Close PR"}
-            </Button>
-          )}
-        </div>
-      )}
+      <PRActionBar
+        canClose={!!canClose}
+        canMerge={!!canMerge}
+        isOpenForApproval={!!isOpenForApproval}
+        hasApproved={!!hasApproved}
+        approvePR={approvePR}
+        withdrawApproval={withdrawApproval}
+        mergePR={mergePR}
+        closePR={closePR}
+        runPRAction={runPRAction}
+      />
     </div>
   )
 }
