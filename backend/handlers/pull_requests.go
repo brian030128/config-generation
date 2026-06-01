@@ -221,31 +221,33 @@ func (h *PullRequestHandler) userRoleNames(ctx context.Context, userID int64) ([
 	return roles, rows.Err()
 }
 
+// countApproversWithRole returns how many approvers hold the named role.
+func countApproversWithRole(approverRoles map[int64][]string, reqName string) int {
+	n := 0
+	for _, roles := range approverRoles {
+		for _, r := range roles {
+			if r == reqName {
+				n++
+				break
+			}
+		}
+	}
+	return n
+}
+
 // requirementsMet reports whether the set of approverRoles satisfies all
 // requirements (AND) or any one of them (OR).
 func requirementsMet(reqs []roleRequirement, approverRoles map[int64][]string, isAnd bool) bool {
-	countApprovers := func(reqName string) int {
-		n := 0
-		for _, roles := range approverRoles {
-			for _, r := range roles {
-				if r == reqName {
-					n++
-					break
-				}
-			}
-		}
-		return n
-	}
 	if isAnd {
 		for _, req := range reqs {
-			if countApprovers(req.RoleName) < req.Count {
+			if countApproversWithRole(approverRoles, req.RoleName) < req.Count {
 				return false
 			}
 		}
 		return true
 	}
 	for _, req := range reqs {
-		if countApprovers(req.RoleName) >= req.Count {
+		if countApproversWithRole(approverRoles, req.RoleName) >= req.Count {
 			return true
 		}
 	}
