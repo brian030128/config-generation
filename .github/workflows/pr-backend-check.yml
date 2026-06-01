@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "backend/**"
+      - "sonar-project.properties"
+      - ".github/workflows/pr-backend-check.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -34,9 +36,13 @@ jobs:
       PGUSER: postgres
       PGPASSWORD: ""
       PGDATABASE: app_test
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # SonarCloud needs full history for accurate blame / new-code analysis
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -112,6 +118,15 @@ jobs:
             backend/coverage.out
             backend/coverage.html
           retention-days: 14
+
+      - name: SonarCloud Scan
+        if: ${{ env.SONAR_TOKEN != '' }}
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: >
+            -Dsonar.host.url=https://sonarcloud.io
 
       - name: Build binary
         working-directory: backend

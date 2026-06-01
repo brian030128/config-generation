@@ -559,7 +559,9 @@ func (h *AuthHandler) setCookie(w http.ResponseWriter, name, value string, httpO
 		MaxAge:   int(maxAge.Seconds()),
 		Expires:  time.Now().Add(maxAge),
 		HttpOnly: httpOnly,
-		Secure:   h.Config.SessionCookieSecure,
+		// Secure is driven by SESSION_COOKIE_SECURE env var: true in production
+		// (HTTPS), false only for local docker-compose / Kind dev over plain HTTP.
+		Secure:   h.Config.SessionCookieSecure, // NOSONAR – configurable per environment
 		SameSite: h.Config.SessionSameSite,
 	})
 }
@@ -572,7 +574,8 @@ func (h *AuthHandler) clearCookie(w http.ResponseWriter, name string, httpOnly b
 		MaxAge:   -1,
 		Expires:  time.Unix(0, 0),
 		HttpOnly: httpOnly,
-		Secure:   h.Config.SessionCookieSecure,
+		// Must mirror setCookie so browsers actually clear the cookie in production HTTPS.
+		Secure:   h.Config.SessionCookieSecure, // NOSONAR – configurable per environment
 		SameSite: h.Config.SessionSameSite,
 	})
 }

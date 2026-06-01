@@ -2,15 +2,15 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: configgen
-      POSTGRES_USER: configgen
-      POSTGRES_PASSWORD: configgen
+      POSTGRES_DB: ${POSTGRES_DB:?set in .env (copy from .env.example)}
+      POSTGRES_USER: ${POSTGRES_USER:?set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U configgen"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
       interval: 2s
       timeout: 5s
       retries: 10
@@ -24,7 +24,7 @@ services:
       - ./backend/db/migrations:/migrations
     command:
       - "-path=/migrations"
-      - "-database=postgres://configgen:configgen@db:5432/configgen?sslmode=disable"
+      - "-database=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?sslmode=disable"
       - "up"
 
   dex:
@@ -44,18 +44,18 @@ services:
       dex:
         condition: service_started
     environment:
-      DATABASE_URL: postgres://configgen:configgen@db:5432/configgen?sslmode=disable
-      JWT_SECRET: dev-secret-change-in-production
-      ADMIN_USERNAME: admin
-      ADMIN_PASSWORD: admin
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:?set in .env}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:?set in .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set in .env}
       OIDC_ENABLED: "true"
       OIDC_ISSUER_URL: http://dex:5556/dex
       OIDC_BROWSER_AUTH_URL: http://localhost:5556/dex/auth
-      OIDC_CLIENT_ID: config-generation
-      OIDC_CLIENT_SECRET: config-generation-secret
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:?set in .env}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:?set in .env}
       OIDC_REDIRECT_URL: http://localhost:3000/api/auth/oidc/callback
       OIDC_PROVIDER_NAME: GitHub
-      OIDC_SUPERUSER_EMAILS: alice@example.com
+      OIDC_SUPERUSER_EMAILS: ${OIDC_SUPERUSER_EMAILS:?set in .env}
       SESSION_COOKIE_SECURE: "false"
       SESSION_COOKIE_SAMESITE: Lax
     ports:

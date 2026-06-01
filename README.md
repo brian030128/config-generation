@@ -25,6 +25,11 @@ push to main
                     A human merges the PR → ArgoCD auto-syncs → app.ycantech.com
 ```
 
+Please remember
+```
+cp .env.example .env
+```
+
 Infrastructure and Kubernetes manifests live in the GitOps repository:  
 **[solar224/config-generation-gitops](https://github.com/solar224/config-generation-gitops)**
 
