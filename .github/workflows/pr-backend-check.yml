@@ -73,11 +73,45 @@ jobs:
           working-directory: backend
           args: --timeout=10m
 
-      - name: Unit and BDD tests
+      - name: Unit and BDD tests (with coverage)
         working-directory: backend
         env:
           TESTCONTAINERS_RYUK_DISABLED: "true"
-        run: go test -v ./...
+        run: |
+          go test -v \
+            -covermode=atomic \
+            -coverpkg=./... \
+            -coverprofile=coverage.out \
+            ./...
+
+      - name: Coverage summary
+        working-directory: backend
+        run: |
+          # Exclude generated / non-production code from the report
+          grep -vE '/(bddtest|dbtest|db/migrations)/' coverage.out > coverage.filtered.out || true
+          mv coverage.filtered.out coverage.out
+
+          echo "## 📊 Backend Test Coverage" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          go tool cover -func=coverage.out | tail -n 40 >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+          TOTAL=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}')
+          echo "**Total coverage: $TOTAL**" >> "$GITHUB_STEP_SUMMARY"
+          echo "coverage=$TOTAL" >> "$GITHUB_OUTPUT"
+
+          # Generate HTML report for artifact download
+          go tool cover -html=coverage.out -o coverage.html
+
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: |
+            backend/coverage.out
+            backend/coverage.html
+          retention-days: 14
 
       - name: Build binary
         working-directory: backend
