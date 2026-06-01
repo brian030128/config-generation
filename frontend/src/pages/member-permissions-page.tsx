@@ -21,24 +21,24 @@ function envLevelOf(e: { write?: boolean; read?: boolean }): EnvLevel {
 }
 
 export default function MemberPermissionsPage() {
-  const { name: projectName, userId } = useParams<{
+  const { name: projectName = "", userId } = useParams<{
     name: string
     userId: string
   }>()
   const userIdNum = Number(userId)
   const navigate = useNavigate()
 
-  const membersQuery = useProjectMembers(projectName!)
+  const membersQuery = useProjectMembers(projectName)
   const member = membersQuery.data?.items.find((m) => m.user_id === userIdNum)
   const displayName = member
     ? member.display_name || member.username
     : `user ${userIdNum}`
 
-  const envsQuery = useEnvironments(projectName!)
+  const envsQuery = useEnvironments(projectName)
   const environments = envsQuery.data?.items ?? []
 
-  const permsQuery = useMemberPermissions(projectName!, userIdNum)
-  const setPermissions = useSetMemberPermissions(projectName!, userIdNum)
+  const permsQuery = useMemberPermissions(projectName, userIdNum)
+  const setPermissions = useSetMemberPermissions(projectName, userIdNum)
 
   const [templates, setTemplates] = useState<TemplateCaps>({
     read_templates: false,

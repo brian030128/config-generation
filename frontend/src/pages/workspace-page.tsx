@@ -49,8 +49,8 @@ export default function WorkspacePage() {
     projects?.items.filter((p) => !activeProjectIds.has(p.id)) ?? []
 
   // We need project names for the PR cards - build a lookup
-  const projectLookup = new Map(
-    projects?.items.map((p) => [p.id, p.name]) ?? [],
+  const projectLookup = new Map<number, string>(
+    projects?.items.map((p) => [p.id, p.name] as const) ?? [],
   )
 
   function handleStart() {
@@ -75,7 +75,7 @@ export default function WorkspacePage() {
 
       <div className="space-y-2">
         {myActivePRs.map((pr) => {
-          const projectName = projectLookup.get(pr.project_id!) ?? `Project #${pr.project_id}`
+          const projectName = projectLookup.get(pr.project_id ?? 0) ?? `Project #${pr.project_id}`
           const changeCount = pr.changes?.length ?? 0
 
           return (

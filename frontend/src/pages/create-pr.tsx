@@ -18,11 +18,11 @@ function formatVal(v: GlobalValueValue | undefined): string {
 }
 
 export default function CreatePRPage() {
-  const { name } = useParams<{ name: string }>()
+  const { name = "" } = useParams<{ name: string }>()
   const location = useLocation()
   const navigate = useNavigate()
   const proposedPayload = (location.state as { payload?: Record<string, GlobalValueValue> })?.payload
-  const { data: current } = useGlobalValue(name!)
+  const { data: current } = useGlobalValue(name)
   const createPR = useCreatePullRequest()
 
   const [title, setTitle] = useState("")
