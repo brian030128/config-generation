@@ -14,6 +14,13 @@ import { useAuth } from "@/lib/auth"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { formatRelativeTime } from "@/lib/utils"
+import {
+  diffLineBgClass,
+  diffLinePrefix,
+  diffLineTextClass,
+  kvProposedTextClass,
+  kvRowBgClass,
+} from "@/lib/diff-styles"
 import { AlertTriangle, ArrowLeft, Check } from "lucide-react"
 import type { PullRequest, PRChange } from "@/api/types"
 
@@ -64,7 +71,7 @@ function TemplateDiffCard({ change, projectName }: Readonly<{ change: PRChange; 
         {lines.map((line, i) => {
           if (line.type === "changed") {
             return (
-              <div key={i}>
+              <div key={`${i}:c:${line.num}`}>
                 <div className="flex bg-red-50 dark:bg-red-950/20">
                   <span className="w-10 shrink-0 select-none px-2 py-0.5 text-right text-xs text-muted-foreground">{line.num}</span>
                   <span className="px-2 py-0.5 text-red-700 dark:text-red-400 whitespace-pre">- {line.old}</span>
@@ -76,19 +83,13 @@ function TemplateDiffCard({ change, projectName }: Readonly<{ change: PRChange; 
               </div>
             )
           }
-          const bg =
-            line.type === "added" ? "bg-green-50 dark:bg-green-950/20"
-            : line.type === "removed" ? "bg-red-50 dark:bg-red-950/20"
-            : ""
-          const prefix = line.type === "added" ? "+ " : line.type === "removed" ? "- " : "  "
-          const textColor =
-            line.type === "added" ? "text-green-700 dark:text-green-400"
-            : line.type === "removed" ? "text-red-700 dark:text-red-400"
-            : ""
+          const bg = diffLineBgClass(line.type)
+          const prefix = diffLinePrefix(line.type)
+          const textColor = diffLineTextClass(line.type)
           const content = line.type === "removed" ? line.old : (line.new ?? line.old)
 
           return (
-            <div key={i} className={`flex ${bg}`}>
+            <div key={`${i}:${line.type}:${line.num}`} className={`flex ${bg}`}>
               <span className="w-10 shrink-0 select-none px-2 py-0.5 text-right text-xs text-muted-foreground">{line.num}</span>
               <span className={`px-2 py-0.5 whitespace-pre ${textColor}`}>{prefix}{content}</span>
             </div>
@@ -154,15 +155,9 @@ function KvDiffCard({ change }: Readonly<{ change: PRChange }>) {
         return (
           <div
             key={key}
-            className={`grid grid-cols-[1fr_1fr_1fr] items-center gap-2 border-b px-4 py-2 last:border-0 text-sm font-mono ${
-              isAdded
-                ? "bg-green-50 dark:bg-green-950/20"
-                : isRemoved
-                  ? "bg-red-50 dark:bg-red-950/20"
-                  : isChanged
-                    ? "bg-yellow-50 dark:bg-yellow-950/20"
-                    : ""
-            }`}
+            className={`grid grid-cols-[1fr_1fr_1fr] items-center gap-2 border-b px-4 py-2 last:border-0 text-sm font-mono ${kvRowBgClass(
+              { isAdded, isRemoved, isChanged },
+            )}`}
           >
             <span className="font-medium">{key}</span>
             <span
@@ -171,7 +166,7 @@ function KvDiffCard({ change }: Readonly<{ change: PRChange }>) {
               {formatVal(currentVal)}
             </span>
             <span
-              className={`${unchanged ? "text-muted-foreground" : ""} ${isAdded ? "text-green-600" : isChanged ? "text-yellow-600" : ""}`}
+              className={`${unchanged ? "text-muted-foreground" : ""} ${kvProposedTextClass({ isAdded, isChanged })}`}
             >
               {formatVal(proposedVal)}
             </span>
@@ -232,7 +227,7 @@ export default function PRDetailPage() {
   const isOpenForApproval =
     pr && (pr.status === "open" || pr.status === "approved")
   const hasApproved =
-    pr && user && pr.approvals?.some((a) => a.user_id === user.id && !a.withdrawn_at)
+    user && pr?.approvals?.some((a) => a.user_id === user.id && !a.withdrawn_at)
 
   function handleClose() {
     if (!pr) return

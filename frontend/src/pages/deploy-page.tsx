@@ -287,16 +287,23 @@ export default function DeployPage() {
         )}
       </div>
 
-      {!projectName || !envName ? (
-        <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-          Select a project and environment to begin.
-        </div>
-      ) : !versionsInitialized ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground p-4">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading version data...
-        </div>
-      ) : (
+      {(() => {
+        if (!projectName || !envName) {
+          return (
+            <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
+              Select a project and environment to begin.
+            </div>
+          )
+        }
+        if (!versionsInitialized) {
+          return (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground p-4">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading version data...
+            </div>
+          )
+        }
+        return (
         <>
           {/* Version Pinning */}
           <VersionPinning
@@ -418,7 +425,9 @@ export default function DeployPage() {
                     <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
                       Rendered Output
                     </h3>
-                    {selectedResult.error ? (
+                    {(() => {
+                      if (selectedResult.error) {
+                        return (
                       <div className="rounded-lg border border-destructive bg-destructive/10 p-4 space-y-2">
                         <div className="flex items-center gap-2 text-destructive font-medium text-sm">
                           <AlertCircle className="h-4 w-4" />
@@ -433,14 +442,20 @@ export default function DeployPage() {
                           </Badge>
                         )}
                       </div>
-                    ) : selectedResult.rendered_output != null ? (
+                        )
+                      }
+                      if (selectedResult.rendered_output != null) {
+                        return (
                       <div className="rounded-lg border overflow-hidden">
                         <DiffViewer
                           oldText={selectedResult.previous_output ?? ""}
                           newText={selectedResult.rendered_output}
                         />
                       </div>
-                    ) : null}
+                        )
+                      }
+                      return null
+                    })()}
                   </div>
                 </div>
               )}
@@ -482,7 +497,8 @@ export default function DeployPage() {
             </>
           )}
         </>
-      )}
+        )
+      })()}
 
       {/* Confirmation dialog */}
       <Dialog open={showConfirm} onOpenChange={setShowConfirm}>

@@ -14,6 +14,12 @@ import { getApiErrorMessage } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { CapabilityEditor } from "@/components/permissions/capability-editor"
 
+function envLevelOf(e: { write?: boolean; read?: boolean }): EnvLevel {
+  if (e.write) return "write"
+  if (e.read) return "read"
+  return "none"
+}
+
 export default function MemberPermissionsPage() {
   const { name: projectName, userId } = useParams<{
     name: string
@@ -52,7 +58,7 @@ export default function MemberPermissionsPage() {
     })
     const levels: Record<string, EnvLevel> = {}
     for (const e of perms.environments ?? []) {
-      levels[e.env] = e.write ? "write" : e.read ? "read" : "none"
+      levels[e.env] = envLevelOf(e)
     }
     setEnvLevels(levels)
   }, [permsQuery.data])

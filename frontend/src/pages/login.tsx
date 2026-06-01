@@ -33,6 +33,11 @@ function getErrorMessage(err: unknown): string {
   return "Something went wrong"
 }
 
+function handleSSOLogin() {
+  const returnTo = encodeURIComponent("/projects")
+  globalThis.location.href = `/api/auth/oidc/login?return_to=${returnTo}`
+}
+
 export default function LoginPage() {
   const { login, user, loading } = useAuth()
   const navigate = useNavigate()
@@ -147,25 +152,24 @@ export default function LoginPage() {
     }
   }
 
-  function handleSSOLogin() {
-    const returnTo = encodeURIComponent("/projects")
-    globalThis.location.href = `/api/auth/oidc/login?return_to=${returnTo}`
-  }
-
   const showPasswordLogin = authConfig?.password_login_enabled ?? true
   const showRegistration = authConfig?.registration_enabled ?? true
   const showSSO = authConfig?.oidc_enabled ?? false
 
+  let slidePosClass: string
+  if (pos === "center") {
+    slidePosClass = "translate-x-0 opacity-100"
+  } else if (pos === "exit-left" || pos === "enter-from-left") {
+    slidePosClass = "-translate-x-full opacity-0"
+  } else {
+    slidePosClass = "translate-x-full opacity-0"
+  }
   const slideClass = [
     "w-full max-w-md",
     pos !== "enter-from-left" && pos !== "enter-from-right"
       ? "transition-all duration-[220ms] ease-in-out"
       : "",
-    pos === "center"
-      ? "translate-x-0 opacity-100"
-      : pos === "exit-left" || pos === "enter-from-left"
-        ? "-translate-x-full opacity-0"
-        : "translate-x-full opacity-0",
+    slidePosClass,
   ].join(" ")
 
   return (

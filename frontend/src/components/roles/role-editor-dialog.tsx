@@ -28,6 +28,17 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+
+function saveButtonLabel({
+  pending,
+  isEdit,
+}: {
+  pending: boolean
+  isEdit: boolean
+}): string {
+  if (pending) return "Saving..."
+  return isEdit ? "Save changes" : "Create role"
+}
 import {
   Select,
   SelectContent,
@@ -389,7 +400,7 @@ export function RoleEditorDialog({
             Cancel
           </Button>
           <Button onClick={handleSave} disabled={pending || (!isEdit && !name.trim())}>
-            {pending ? "Saving..." : isEdit ? "Save changes" : "Create role"}
+            {saveButtonLabel({ pending, isEdit })}
           </Button>
         </DialogFooter>
       </DialogContent>

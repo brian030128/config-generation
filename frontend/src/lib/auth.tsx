@@ -4,6 +4,7 @@ import {
   useEffect,
   useState,
   useCallback,
+  useMemo,
   type ReactNode,
 } from "react"
 import {
@@ -102,14 +103,21 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
     }
   }, [])
 
-  return (
-    <AuthContext.Provider value={{
+  // Memoize the context value so consumers don't re-render on every parent
+  // render just because the provider's value object identity changed.
+  const value = useMemo<AuthContextValue>(
+    () => ({
       token: auth?.token ?? null,
       user: auth?.user ?? null,
       loading,
       login,
       logout,
-    }}>
+    }),
+    [auth, loading, login, logout],
+  )
+
+  return (
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   )

@@ -131,8 +131,11 @@ export function KvEditor({ name, data, readOnly = false }: Readonly<KvEditorProp
           <span />
         </div>
         {entries.map(([key, val], index) => (
+          // Row identity is positional: editing a key must not remount the
+          // input (would steal focus mid-typing), so the index is the correct
+          // key here. NOSONAR
           <div
-            key={index}
+            key={index} // NOSONAR
             className="grid grid-cols-[1fr_auto_2fr_auto] items-start gap-2 border-b px-4 py-2 last:border-0"
           >
             <Input
@@ -159,7 +162,8 @@ export function KvEditor({ name, data, readOnly = false }: Readonly<KvEditorProp
             {Array.isArray(val) ? (
               <div className="space-y-1">
                 {val.map((item, itemIndex) => (
-                  <div key={itemIndex} className="flex items-center gap-2">
+                  // Same focus-stability reason as the outer row key. NOSONAR
+                  <div key={itemIndex} className="flex items-center gap-2"> {/* NOSONAR */}
                     <Input
                       value={item}
                       onChange={(e) =>

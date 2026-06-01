@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { kvProposedTextClass, kvRowBgClass } from "@/lib/diff-styles"
 
 // Render a value for the diff: lists as JSON (e.g. ["a","b"]), scalars as plain text.
 function formatVal(v: GlobalValueValue | undefined): string {
@@ -116,21 +117,15 @@ export default function CreatePRPage() {
             return (
               <div
                 key={key}
-                className={`grid grid-cols-[1fr_1fr_1fr] items-center gap-2 border-b px-4 py-2 last:border-0 text-sm font-mono ${
-                  isAdded
-                    ? "bg-green-50 dark:bg-green-950/20"
-                    : isRemoved
-                      ? "bg-red-50 dark:bg-red-950/20"
-                      : isChanged
-                        ? "bg-yellow-50 dark:bg-yellow-950/20"
-                        : ""
-                }`}
+                className={`grid grid-cols-[1fr_1fr_1fr] items-center gap-2 border-b px-4 py-2 last:border-0 text-sm font-mono ${kvRowBgClass(
+                  { isAdded, isRemoved, isChanged },
+                )}`}
               >
                 <span className="font-medium">{key}</span>
                 <span className={`${unchanged ? "text-muted-foreground" : ""} ${isRemoved ? "line-through text-red-600" : ""}`}>
                   {formatVal(currentVal)}
                 </span>
-                <span className={`${unchanged ? "text-muted-foreground" : ""} ${isAdded ? "text-green-600" : isChanged ? "text-yellow-600" : ""}`}>
+                <span className={`${unchanged ? "text-muted-foreground" : ""} ${kvProposedTextClass({ isAdded, isChanged })}`}>
                   {formatVal(proposedVal)}
                 </span>
               </div>
