@@ -573,6 +573,7 @@ func (h *AuthHandler) setCookie(w http.ResponseWriter, name, value string, maxAg
 // X-CSRF-Token header on every state-changing request (validated by
 // middleware/csrf.go). The cookie's value is a 256-bit random token that has
 // no authentication meaning on its own — forging it does not grant access.
+// SONAR_OFF: CSRF double-submit cookie (see middleware/csrf.go)
 func (h *AuthHandler) setCSRFCookie(w http.ResponseWriter, value string, maxAge time.Duration) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     csrfCookieName,
@@ -585,6 +586,8 @@ func (h *AuthHandler) setCSRFCookie(w http.ResponseWriter, value string, maxAge 
 		SameSite: h.Config.SessionSameSite,
 	})
 }
+
+// SONAR_ON
 
 // clearCookie expires an HttpOnly cookie.
 func (h *AuthHandler) clearCookie(w http.ResponseWriter, name string) {
@@ -602,6 +605,7 @@ func (h *AuthHandler) clearCookie(w http.ResponseWriter, name string) {
 }
 
 // clearCSRFCookie expires the CSRF cookie (non-HttpOnly counterpart).
+// SONAR_OFF: CSRF double-submit cookie (see middleware/csrf.go)
 func (h *AuthHandler) clearCSRFCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     csrfCookieName,
@@ -614,6 +618,8 @@ func (h *AuthHandler) clearCSRFCookie(w http.ResponseWriter) {
 		SameSite: h.Config.SessionSameSite,
 	})
 }
+
+// SONAR_ON
 
 func validCSRF(r *http.Request) bool {
 	cookie, err := r.Cookie(csrfCookieName)
