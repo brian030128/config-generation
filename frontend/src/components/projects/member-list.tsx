@@ -18,7 +18,7 @@ import {
 import { AddMemberDialog } from "./add-member-dialog"
 import { SlidersHorizontal, Trash2, Users } from "lucide-react"
 
-export function MemberList({ projectName }: { projectName: string }) {
+export function MemberList({ projectName }: Readonly<{ projectName: string }>) {
   const { data, isLoading, error } = useProjectMembers(projectName)
   const { user } = useAuth()
   const members = data?.items ?? []
@@ -115,10 +115,10 @@ export function MemberList({ projectName }: { projectName: string }) {
 function RemoveMemberButton({
   projectName,
   member,
-}: {
+}: Readonly<{
   projectName: string
   member: ProjectMember
-}) {
+}>) {
   const [open, setOpen] = useState(false)
   const removeMember = useRemoveProjectMember(projectName)
   const displayName = member.display_name || member.username

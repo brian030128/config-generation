@@ -20,7 +20,7 @@ interface KvEditorProps {
 
 type Entry = [string, GlobalValueValue]
 
-export function KvEditor({ name, data, readOnly = false }: KvEditorProps) {
+export function KvEditor({ name, data, readOnly = false }: Readonly<KvEditorProps>) {
   const [entries, setEntries] = useState<Entry[]>([])
   const navigate = useNavigate()
 

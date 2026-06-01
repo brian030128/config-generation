@@ -15,7 +15,7 @@ interface DiffLine {
   newLineNo?: number
 }
 
-export function DiffViewer({ oldText, newText, className }: DiffViewerProps) {
+export function DiffViewer({ oldText, newText, className }: Readonly<DiffViewerProps>) {
   const { lines, additions, deletions } = useMemo(() => {
     const parts = diffLines(oldText, newText)
     const result: DiffLine[] = []
@@ -26,7 +26,7 @@ export function DiffViewer({ oldText, newText, className }: DiffViewerProps) {
 
     for (const part of parts) {
       const partLines = part.value.split("\n")
-      if (partLines[partLines.length - 1] === "") partLines.pop()
+      if (partLines.at(-1) === "") partLines.pop()
 
       for (const content of partLines) {
         if (part.added) {
@@ -108,9 +108,9 @@ interface TextViewerProps {
   className?: string
 }
 
-export function TextViewer({ text, className }: TextViewerProps) {
+export function TextViewer({ text, className }: Readonly<TextViewerProps>) {
   const lines = text.split("\n")
-  if (lines[lines.length - 1] === "") lines.pop()
+  if (lines.at(-1) === "") lines.pop()
 
   return (
     <div className={cn("text-sm font-mono", className)}>

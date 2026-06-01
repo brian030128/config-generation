@@ -35,9 +35,9 @@ client.interceptors.request.use((config) => {
 client.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401 && window.location.pathname !== "/login") {
+    if (error.response?.status === 401 && globalThis.location.pathname !== "/login") {
       localStorage.removeItem("auth_token")
-      window.location.href = "/login"
+      globalThis.location.href = "/login"
     }
     return Promise.reject(error)
   },

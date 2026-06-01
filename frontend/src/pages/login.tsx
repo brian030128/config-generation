@@ -16,7 +16,7 @@ import { GithubIcon } from "@/components/icons/github"
 import { GoogleIcon } from "@/components/icons/google"
 import { AxiosError } from "axios"
 
-function ProviderIcon({ name, className }: { name: string; className?: string }) {
+function ProviderIcon({ name, className }: Readonly<{ name: string; className?: string }>) {
   const lower = name.toLowerCase()
   if (lower.includes("github")) return <GithubIcon className={className} />
   if (lower.includes("google")) return <GoogleIcon className={className} />
@@ -149,7 +149,7 @@ export default function LoginPage() {
 
   function handleSSOLogin() {
     const returnTo = encodeURIComponent("/projects")
-    window.location.href = `/api/auth/oidc/login?return_to=${returnTo}`
+    globalThis.location.href = `/api/auth/oidc/login?return_to=${returnTo}`
   }
 
   const showPasswordLogin = authConfig?.password_login_enabled ?? true

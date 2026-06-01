@@ -25,7 +25,7 @@ export function TemplateList({
   projectName,
   workspaceMode,
   modifiedTemplates,
-}: TemplateListProps) {
+}: Readonly<TemplateListProps>) {
   const { data, isLoading } = useTemplates(projectName)
   const { data: draft } = useActiveDraft(workspaceMode ? projectName : "")
   const [editingTemplate, setEditingTemplate] = useState<string | null>(null)

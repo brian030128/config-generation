@@ -20,10 +20,10 @@ import { AddEnvAdminDialog } from "./add-env-admin-dialog"
 export function EnvAdminList({
   projectName,
   envName,
-}: {
+}: Readonly<{
   projectName: string
   envName: string
-}) {
+}>) {
   const { data, isLoading, error } = useEnvAdmins(projectName, envName)
   const { user } = useAuth()
   const admins = data?.items ?? []
@@ -96,11 +96,11 @@ function RemoveEnvAdminButton({
   projectName,
   envName,
   admin,
-}: {
+}: Readonly<{
   projectName: string
   envName: string
   admin: EnvAdmin
-}) {
+}>) {
   const [open, setOpen] = useState(false)
   const removeAdmin = useRemoveEnvAdmin(projectName, envName)
   const displayName = admin.display_name || admin.username

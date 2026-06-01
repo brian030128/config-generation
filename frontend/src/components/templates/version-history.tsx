@@ -13,7 +13,7 @@ export function VersionHistory({
   templateName,
   selectedVersion,
   onSelectVersion,
-}: VersionHistoryProps) {
+}: Readonly<VersionHistoryProps>) {
   const { data, isLoading } = useTemplateVersions(projectName, templateName)
 
   if (isLoading) {

@@ -32,7 +32,7 @@ function statusVariant(status: PullRequest["status"]) {
   }
 }
 
-function TemplateDiffCard({ change, projectName }: { change: PRChange; projectName: string }) {
+function TemplateDiffCard({ change, projectName }: Readonly<{ change: PRChange; projectName: string }>) {
   const { data: currentTemplate } = useTemplate(projectName, change.template_name ?? "")
   const currentBody = currentTemplate?.body ?? ""
   const proposedBody = change.proposed_payload
@@ -106,7 +106,7 @@ function formatVal(v: unknown): string {
   return String(v)
 }
 
-function KvDiffCard({ change }: { change: PRChange }) {
+function KvDiffCard({ change }: Readonly<{ change: PRChange }>) {
   const globalValuesName = change.object_type === "global_values" ? change.global_values_name : null
   const { data: currentGV } = useGlobalValue(globalValuesName ?? "")
 
@@ -182,7 +182,7 @@ function KvDiffCard({ change }: { change: PRChange }) {
   )
 }
 
-function EnvCreateCard({ change }: { change: PRChange }) {
+function EnvCreateCard({ change }: Readonly<{ change: PRChange }>) {
   const envData = (() => {
     try { return JSON.parse(change.proposed_payload) as { name: string; description?: string } }
     catch { return { name: "unknown" } }
@@ -200,7 +200,7 @@ function EnvCreateCard({ change }: { change: PRChange }) {
   )
 }
 
-function ChangeCard({ change, projectName }: { change: PRChange; projectName: string }) {
+function ChangeCard({ change, projectName }: Readonly<{ change: PRChange; projectName: string }>) {
   if (change.object_type === "template") {
     return <TemplateDiffCard change={change} projectName={projectName} />
   }

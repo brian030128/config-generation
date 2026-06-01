@@ -524,13 +524,13 @@ function InputDiffSection({
   hasChanges,
   oldText,
   newText,
-}: {
+}: Readonly<{
   title: string
   subtitle?: string
   hasChanges: boolean
   oldText?: string
   newText: string
-}) {
+}>) {
   const [expanded, setExpanded] = useState(hasChanges)
 
   useEffect(() => {
@@ -575,7 +575,7 @@ function VersionPinning({
   valuesVersionId,
   gvVersions,
   setGvVersions,
-}: {
+}: Readonly<{
   projectName: string
   templates: { template_name: string; version_id: number }[]
   templateVersions: Record<string, number>
@@ -583,7 +583,7 @@ function VersionPinning({
   valuesVersionId: number
   gvVersions: Record<string, number>
   setGvVersions: (v: Record<string, number>) => void
-}) {
+}>) {
   const [expanded, setExpanded] = useState(false)
 
   return (
@@ -669,12 +669,12 @@ function TemplateVersionSelect({
   templateName,
   currentVersion,
   onChange,
-}: {
+}: Readonly<{
   projectName: string
   templateName: string
   currentVersion: number
   onChange: (ver: number) => void
-}) {
+}>) {
   const { data: versionsData } = useTemplateVersions(projectName, templateName)
   const versions = versionsData?.items ?? []
 
@@ -709,11 +709,11 @@ function GvVersionSelect({
   gvName,
   currentVersion,
   onChange,
-}: {
+}: Readonly<{
   gvName: string
   currentVersion: number
   onChange: (ver: number) => void
-}) {
+}>) {
   const { data: versionsData } = useGlobalValueVersions(gvName)
   const versions = versionsData?.items ?? []
 

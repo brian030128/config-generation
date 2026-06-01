@@ -16,9 +16,9 @@ import { Plus } from "lucide-react"
 
 export function CreateTemplateDialog({
   projectName,
-}: {
+}: Readonly<{
   projectName: string
-}) {
+}>) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState("")
   const [body, setBody] = useState("")

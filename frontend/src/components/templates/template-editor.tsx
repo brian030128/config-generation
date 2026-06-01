@@ -22,7 +22,7 @@ export function TemplateEditor({
   projectName,
   templateName,
   onClose,
-}: TemplateEditorProps) {
+}: Readonly<TemplateEditorProps>) {
   const editorRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null)

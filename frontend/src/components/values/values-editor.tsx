@@ -20,7 +20,7 @@ export function ValuesEditor({
   projectName,
   envName,
   values,
-}: ValuesEditorProps) {
+}: Readonly<ValuesEditorProps>) {
   const [payload, setPayload] = useState<Record<string, unknown>>({})
   const [refMode, setRefMode] = useState<Record<string, boolean>>({})
   const [refState, setRefState] = useState<Record<string, { group: string; key: string }>>({})

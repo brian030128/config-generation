@@ -19,7 +19,7 @@ export function ReferenceSelector({
   keyName,
   onGroupChange,
   onKeyChange,
-}: ReferenceSelectorProps) {
+}: Readonly<ReferenceSelectorProps>) {
   const { data: gvList } = useGlobalValues()
   const { data: gvDetail } = useGlobalValue(group)
 

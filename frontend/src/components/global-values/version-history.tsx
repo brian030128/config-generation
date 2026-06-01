@@ -11,7 +11,7 @@ export function GvVersionHistory({
   name,
   selectedVersion,
   onSelectVersion,
-}: GvVersionHistoryProps) {
+}: Readonly<GvVersionHistoryProps>) {
   const { data, isLoading } = useGlobalValueVersions(name)
 
   if (isLoading) {

@@ -35,11 +35,11 @@ export function AssignRoleDialog({
   role,
   open,
   onOpenChange,
-}: {
+}: Readonly<{
   role: Role
   open: boolean
   onOpenChange: (open: boolean) => void
-}) {
+}>) {
   const [search, setSearch] = useState("")
   const debouncedSearch = useDebouncedValue(search, 250)
   const assign = useAssignRole()

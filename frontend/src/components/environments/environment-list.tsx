@@ -15,7 +15,7 @@ interface EnvironmentListProps {
 export function EnvironmentList({
   projectName,
   workspaceMode,
-}: EnvironmentListProps) {
+}: Readonly<EnvironmentListProps>) {
   const { data: envData, isLoading: envsLoading } = useEnvironments(projectName)
   const environments = envData?.items ?? []
 
