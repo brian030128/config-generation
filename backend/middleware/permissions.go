@@ -188,7 +188,7 @@ func RequirePermission(
 // permissionGateConfig collects the static config a RequirePermission gate is
 // built with so servePermissionGate stays within Sonar's parameter limit.
 type permissionGateConfig struct {
-	action, resource                   string
+	action, resource            string
 	projectKey, envKey, nameKey KeyExtractor
 }
 
