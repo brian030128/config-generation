@@ -3,7 +3,9 @@ package handlers
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"strings"
 )
@@ -95,4 +97,16 @@ func validateApprovalCondition(ctx context.Context, db *sql.DB, builtins []strin
 		}
 	}
 	return nil
+}
+
+// writeApprovalConditionError writes the standard HTTP response for an error
+// returned by validateApprovalCondition: 400 for a validation failure
+// (*approvalConditionError), 500 for any other (internal/DB) error.
+func writeApprovalConditionError(w http.ResponseWriter, err error) {
+	var vErr *approvalConditionError
+	if errors.As(err, &vErr) {
+		writeError(w, http.StatusBadRequest, vErr.msg, "validation")
+		return
+	}
+	writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 }
