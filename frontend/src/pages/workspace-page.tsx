@@ -96,7 +96,7 @@ export default function WorkspacePage() {
                   </p>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  {changeCount} change{changeCount !== 1 ? "s" : ""} · updated{" "}
+                  {changeCount} change{changeCount === 1 ? "" : "s"} · updated{" "}
                   {formatRelativeTime(pr.updated_at)}
                 </p>
               </div>

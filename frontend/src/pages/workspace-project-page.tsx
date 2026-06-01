@@ -110,7 +110,7 @@ export default function WorkspaceProjectPage() {
           </div>
           {draft && (
             <p className="mt-1 text-sm text-muted-foreground">
-              {changeCount} change{changeCount !== 1 ? "s" : ""}
+              {changeCount} change{changeCount === 1 ? "" : "s"}
               {draft.title ? ` · PR #${draft.id}: ${draft.title}` : ""}
             </p>
           )}
@@ -163,7 +163,7 @@ export default function WorkspaceProjectPage() {
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3">
           <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-destructive">
             <AlertTriangle className="h-4 w-4" />
-            Resolve {problems.length} problem{problems.length !== 1 ? "s" : ""} before submitting
+            Resolve {problems.length} problem{problems.length === 1 ? "" : "s"} before submitting
           </h3>
           <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
             {problems.map((p) => {

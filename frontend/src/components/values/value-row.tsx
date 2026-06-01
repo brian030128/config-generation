@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { safeString } from "@/lib/utils"
 import {
   ReferenceSelector,
   parseReference,
@@ -38,7 +39,7 @@ export function ValueRow({
     )
   }
 
-  const strValue = String(value ?? "")
+  const strValue = safeString(value)
   const ref = parseReference(strValue)
   const isRef = ref !== null
 

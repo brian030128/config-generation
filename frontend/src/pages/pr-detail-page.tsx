@@ -13,7 +13,7 @@ import { useProjects } from "@/hooks/use-projects"
 import { useAuth } from "@/lib/auth"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { formatRelativeTime } from "@/lib/utils"
+import { formatRelativeTime, safeString } from "@/lib/utils"
 import {
   diffLineBgClass,
   diffLinePrefix,
@@ -48,12 +48,12 @@ function TemplateDiffCard({ change, projectName }: Readonly<{ change: PRChange; 
   const newLines = proposedBody.split("\n")
   const maxLen = Math.max(oldLines.length, newLines.length)
 
-  type DiffLine = { type: "unchanged" | "added" | "removed" | "changed"; num: number; old?: string; new?: string }
+  type DiffLine = { type: "context" | "added" | "removed" | "changed"; num: number; old?: string; new?: string }
   const lines: DiffLine[] = []
   for (let i = 0; i < maxLen; i++) {
     const ol = i < oldLines.length ? oldLines[i] : undefined
     const nl = i < newLines.length ? newLines[i] : undefined
-    if (ol === nl) lines.push({ type: "unchanged", num: i + 1, old: ol, new: nl })
+    if (ol === nl) lines.push({ type: "context", num: i + 1, old: ol, new: nl })
     else if (ol === undefined) lines.push({ type: "added", num: i + 1, new: nl })
     else if (nl === undefined) lines.push({ type: "removed", num: i + 1, old: ol })
     else lines.push({ type: "changed", num: i + 1, old: ol, new: nl })
@@ -103,8 +103,7 @@ function TemplateDiffCard({ change, projectName }: Readonly<{ change: PRChange; 
 // Render a diff value: lists as JSON (e.g. ["a","b"]), scalars as plain text.
 function formatVal(v: unknown): string {
   if (v === undefined) return "—"
-  if (Array.isArray(v)) return JSON.stringify(v)
-  return String(v)
+  return safeString(v)
 }
 
 function KvDiffCard({ change }: Readonly<{ change: PRChange }>) {

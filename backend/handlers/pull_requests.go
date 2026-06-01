@@ -631,7 +631,7 @@ func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
 					break
 				}
 				var envReq models.CreateEnvironmentRequest
-				if jsonErr := json.Unmarshal([]byte(c.ProposedPayload), &envReq); jsonErr != nil {
+				if json.Unmarshal([]byte(c.ProposedPayload), &envReq) != nil {
 					continue
 				}
 				if _, err = tx.ExecContext(r.Context(), `

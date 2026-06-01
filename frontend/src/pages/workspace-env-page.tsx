@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { ArrowLeft } from "lucide-react"
+import { safeString } from "@/lib/utils"
 import {
   ReferenceSelector,
   parseReference,
@@ -80,12 +81,10 @@ export default function WorkspaceEnvPage() {
     for (const v of variables) {
       if (source && v.name in source) {
         newPayload[v.name] = source[v.name]
-      } else if (v.default !== undefined) {
-        newPayload[v.name] = v.default
       } else {
-        newPayload[v.name] = ""
+        newPayload[v.name] = v.default ?? ""
       }
-      const ref = parseReference(String(newPayload[v.name] ?? ""))
+      const ref = parseReference(safeString(newPayload[v.name]))
       if (ref) {
         newRefMode[v.name] = true
         newRefState[v.name] = ref
@@ -204,9 +203,9 @@ export default function WorkspaceEnvPage() {
                   ) : (
                     <Input
                       className="font-mono text-sm"
-                      value={String(payload[v.name] ?? "")}
+                      value={safeString(payload[v.name])}
                       onChange={(e) => handleChange(v.name, e.target.value)}
-                      placeholder={v.default !== undefined ? `default: ${v.default}` : undefined}
+                      placeholder={v.default === undefined ? undefined : `default: ${v.default}`}
                     />
                   )}
                   <Button

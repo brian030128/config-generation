@@ -205,16 +205,20 @@ export function projectCapabilitiesToAtoms(
     if (level === "read") {
       atoms.push(atom("read", "project_values", { key_project: p, key_env: env }))
     } else if (level === "write") {
-      atoms.push(atom("write", "project_values", { key_project: p, key_env: env }))
-      atoms.push(atom("create", "env_values", { key_project: p, key_env: env }))
+      atoms.push(
+        atom("write", "project_values", { key_project: p, key_env: env }),
+        atom("create", "env_values", { key_project: p, key_env: env }),
+      )
     }
   }
 
   if (caps.manage_members_roles) atoms.push(atom("grant", "", { key_project: p }))
   if (caps.delete_project) atoms.push(atom("delete", "project", { key_project: p }))
   if (caps.manage_environments) {
-    atoms.push(atom("create", "env_values", { key_project: p, key_env: WILDCARD }))
-    atoms.push(atom("delete", "project_values", { key_project: p, key_env: WILDCARD }))
+    atoms.push(
+      atom("create", "env_values", { key_project: p, key_env: WILDCARD }),
+      atom("delete", "project_values", { key_project: p, key_env: WILDCARD }),
+    )
   }
 
   return [...atoms, ...extraAtoms]

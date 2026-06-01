@@ -32,3 +32,18 @@ export function formatRelativeTime(dateString: string): string {
   if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`
   return date.toLocaleDateString()
 }
+
+// safeString coerces an unknown value to a string display, avoiding the
+// useless "[object Object]" output that `String(x)` produces for plain
+// objects. Objects/arrays are serialized as JSON.
+export function safeString(v: unknown): string {
+  if (v == null) return ""
+  if (typeof v === "object") {
+    try {
+      return JSON.stringify(v)
+    } catch {
+      return ""
+    }
+  }
+  return String(v)
+}
