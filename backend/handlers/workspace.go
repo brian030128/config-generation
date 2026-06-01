@@ -80,6 +80,35 @@ func (h *PullRequestHandler) resolveProjectIDByName(ctx context.Context, name st
 	return id, err
 }
 
+// reopenIfApproved transitions an approved PR back to "open" and withdraws
+// outstanding approvals. It's a no-op for any other status. Extracted from
+// stage to keep its cognitive complexity within Sonar's limit.
+func reopenIfApproved(ctx context.Context, tx *sql.Tx, pr *models.PullRequest) error {
+	_, err := reopenIfApprovedReport(ctx, tx, pr)
+	return err
+}
+
+// reopenIfApprovedReport is reopenIfApproved that also reports whether the
+// transition actually ran, letting callers skip a redundant updated_at bump
+// when the helper already issued an UPDATE pull_requests.
+func reopenIfApprovedReport(ctx context.Context, tx *sql.Tx, pr *models.PullRequest) (bool, error) {
+	if pr.Status != "approved" {
+		return false, nil
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE pr_approvals SET withdrawn_at = NOW() WHERE pr_id = $1 AND withdrawn_at IS NULL
+	`, pr.ID); err != nil {
+		return false, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE pull_requests SET status = 'open', updated_at = NOW() WHERE id = $1
+	`, pr.ID); err != nil {
+		return false, err
+	}
+	pr.Status = "open"
+	return true, nil
+}
+
 // stage upserts a single change into the caller's workspace and returns the
 // refreshed PR. Staging into an approved PR resets approvals and reopens it.
 func (h *PullRequestHandler) stage(w http.ResponseWriter, r *http.Request, sc stagedChange) {
@@ -109,20 +138,9 @@ func (h *PullRequestHandler) stage(w http.ResponseWriter, r *http.Request, sc st
 		return
 	}
 
-	if pr.Status == "approved" {
-		if _, err = tx.ExecContext(r.Context(), `
-			UPDATE pr_approvals SET withdrawn_at = NOW() WHERE pr_id = $1 AND withdrawn_at IS NULL
-		`, pr.ID); err != nil {
-			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
-			return
-		}
-		if _, err = tx.ExecContext(r.Context(), `
-			UPDATE pull_requests SET status = 'open', updated_at = NOW() WHERE id = $1
-		`, pr.ID); err != nil {
-			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
-			return
-		}
-		pr.Status = "open"
+	if err := reopenIfApproved(r.Context(), tx, &pr); err != nil {
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
+		return
 	}
 
 	// Capture the base version for conflict detection on versioned objects.
@@ -475,21 +493,12 @@ func (h *PullRequestHandler) UnstageChange(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if pr.Status == "approved" {
-		if _, err = tx.ExecContext(r.Context(), `
-			UPDATE pr_approvals SET withdrawn_at = NOW() WHERE pr_id = $1 AND withdrawn_at IS NULL
-		`, pr.ID); err != nil {
-			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
-			return
-		}
-		if _, err = tx.ExecContext(r.Context(), `
-			UPDATE pull_requests SET status = 'open', updated_at = NOW() WHERE id = $1
-		`, pr.ID); err != nil {
-			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
-			return
-		}
-		pr.Status = "open"
-	} else {
+	transitioned, err := reopenIfApprovedReport(r.Context(), tx, &pr)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
+		return
+	}
+	if !transitioned {
 		if _, err = tx.ExecContext(r.Context(), `UPDATE pull_requests SET updated_at = NOW() WHERE id = $1`, pr.ID); err != nil {
 			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return

@@ -30,6 +30,7 @@ const (
 	oidcStateCookieName  = "configgen_oidc_state"
 	oidcNonceCookieName  = "configgen_oidc_nonce"
 	oidcReturnCookieName = "configgen_oidc_return_to"
+	defaultRedirectPath  = "/projects"
 )
 
 type AuthConfig struct {
@@ -301,31 +302,9 @@ func (h *AuthHandler) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	oauthToken, err := oauthConfig.Exchange(r.Context(), r.URL.Query().Get("code"))
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "failed to exchange OIDC code", "unauthorized")
-		return
-	}
-
-	rawIDToken, ok := oauthToken.Extra("id_token").(string)
-	if !ok || rawIDToken == "" {
-		writeError(w, http.StatusUnauthorized, "OIDC response missing ID token", "unauthorized")
-		return
-	}
-
-	idToken, err := verifier.Verify(r.Context(), rawIDToken)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "invalid OIDC ID token", "unauthorized")
-		return
-	}
-	if idToken.Nonce != nonceCookie.Value {
-		writeError(w, http.StatusUnauthorized, "invalid OIDC nonce", "unauthorized")
-		return
-	}
-
-	var claims oidcUserClaims
-	if err := idToken.Claims(&claims); err != nil {
-		writeError(w, http.StatusUnauthorized, "invalid OIDC claims", "unauthorized")
+	idToken, claims, errResp := exchangeAndVerifyOIDC(r.Context(), oauthConfig, verifier, r.URL.Query().Get("code"), nonceCookie.Value)
+	if errResp != nil {
+		writeError(w, errResp.status, errResp.msg, errResp.code)
 		return
 	}
 
@@ -350,7 +329,7 @@ func (h *AuthHandler) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 	h.clearCookie(w, oidcNonceCookieName)
 	h.clearCookie(w, oidcReturnCookieName)
 
-	returnTo := "/projects"
+	returnTo := defaultRedirectPath
 	if cookie, err := r.Cookie(oidcReturnCookieName); err == nil {
 		returnTo = safeReturnTo(cookie.Value)
 	}
@@ -396,6 +375,38 @@ func (h *AuthHandler) loadMeByID(ctx context.Context, userID int64) (models.MeRe
 		userID,
 	).Scan(&me.ID, &me.Username, &me.DisplayName, &me.CreatedAt, &me.Superuser)
 	return me, err
+}
+
+type oidcCallbackError struct {
+	status int
+	msg    string
+	code   string
+}
+
+// exchangeAndVerifyOIDC trades the authorization code for an ID token, verifies
+// it (signature + nonce), and decodes the user claims. It exists to keep
+// OIDCCallback's cognitive complexity within Sonar's threshold.
+func exchangeAndVerifyOIDC(ctx context.Context, oauthConfig *oauth2.Config, verifier *oidc.IDTokenVerifier, code, expectedNonce string) (*oidc.IDToken, oidcUserClaims, *oidcCallbackError) {
+	var claims oidcUserClaims
+	oauthToken, err := oauthConfig.Exchange(ctx, code)
+	if err != nil {
+		return nil, claims, &oidcCallbackError{http.StatusUnauthorized, "failed to exchange OIDC code", "unauthorized"}
+	}
+	rawIDToken, ok := oauthToken.Extra("id_token").(string)
+	if !ok || rawIDToken == "" {
+		return nil, claims, &oidcCallbackError{http.StatusUnauthorized, "OIDC response missing ID token", "unauthorized"}
+	}
+	idToken, err := verifier.Verify(ctx, rawIDToken)
+	if err != nil {
+		return nil, claims, &oidcCallbackError{http.StatusUnauthorized, "invalid OIDC ID token", "unauthorized"}
+	}
+	if idToken.Nonce != expectedNonce {
+		return nil, claims, &oidcCallbackError{http.StatusUnauthorized, "invalid OIDC nonce", "unauthorized"}
+	}
+	if err := idToken.Claims(&claims); err != nil {
+		return nil, claims, &oidcCallbackError{http.StatusUnauthorized, "invalid OIDC claims", "unauthorized"}
+	}
+	return idToken, claims, nil
 }
 
 func (h *AuthHandler) ensureOIDC(ctx context.Context) (*oauth2.Config, *oidc.IDTokenVerifier, error) {
@@ -641,11 +652,11 @@ func randomToken() (string, error) {
 
 func safeReturnTo(raw string) string {
 	if raw == "" {
-		return "/projects"
+		return defaultRedirectPath
 	}
 	u, err := url.Parse(raw)
 	if err != nil || u.IsAbs() || !strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "//") {
-		return "/projects"
+		return defaultRedirectPath
 	}
 	return raw
 }

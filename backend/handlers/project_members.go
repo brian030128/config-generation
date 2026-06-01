@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
 
@@ -139,6 +140,36 @@ func (h *ProjectMemberHandler) AddMember(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusCreated, m)
 }
 
+// ensureNotLastProjectAdmin returns a non-zero HTTP status with message and
+// code when removing targetUserID would leave the project's auto-created admin
+// role with zero members. A 0 status means the removal is safe to proceed.
+// Extracted from RemoveMember to keep its cognitive complexity within limits.
+func (h *ProjectMemberHandler) ensureNotLastProjectAdmin(ctx context.Context, projectName string, targetUserID int64) (int, string, string) {
+	var adminRoleID int64
+	err := h.DB.QueryRowContext(ctx,
+		`SELECT id FROM roles WHERE name = $1 AND is_auto_created = true LIMIT 1`,
+		projectName+"_project_admin").Scan(&adminRoleID)
+	if err == sql.ErrNoRows {
+		return 0, "", ""
+	}
+	if err != nil {
+		return http.StatusInternalServerError, msgDatabaseError, "internal"
+	}
+	var isAdmin bool
+	var adminCount int
+	if err := h.DB.QueryRowContext(ctx, `
+		SELECT
+			EXISTS(SELECT 1 FROM user_roles WHERE role_id = $1 AND user_id = $2),
+			(SELECT COUNT(*) FROM user_roles WHERE role_id = $1)
+	`, adminRoleID, targetUserID).Scan(&isAdmin, &adminCount); err != nil {
+		return http.StatusInternalServerError, msgDatabaseError, "internal"
+	}
+	if isAdmin && adminCount <= 1 {
+		return http.StatusBadRequest, "cannot remove the last project admin", "validation"
+	}
+	return 0, "", ""
+}
+
 // RemoveMember removes a user from the project. It also revokes the user's
 // project-scoped role assignments so no permissions remain without membership.
 // Removing the sole member of the project_admin role is refused to avoid
@@ -156,32 +187,11 @@ func (h *ProjectMemberHandler) RemoveMember(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Guard: refuse to remove a user who is the sole member of the project's
-	// auto-created admin role (would leave the project with no admin). Roles are
-	// global; the project's admin role is "<project>_project_admin".
-	var adminRoleID int64
-	err = h.DB.QueryRowContext(r.Context(),
-		`SELECT id FROM roles WHERE name = $1 AND is_auto_created = true LIMIT 1`,
-		projectName+"_project_admin").Scan(&adminRoleID)
-	if err != nil && err != sql.ErrNoRows {
-		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
+	// Guard: refuse to remove the sole admin (would leave the project with no
+	// admin). See ensureNotLastProjectAdmin for the role-resolution details.
+	if status, msg, code := h.ensureNotLastProjectAdmin(r.Context(), projectName, targetUserID); status != 0 {
+		writeError(w, status, msg, code)
 		return
-	}
-	if err == nil {
-		var isAdmin bool
-		var adminCount int
-		if err := h.DB.QueryRowContext(r.Context(), `
-			SELECT
-				EXISTS(SELECT 1 FROM user_roles WHERE role_id = $1 AND user_id = $2),
-				(SELECT COUNT(*) FROM user_roles WHERE role_id = $1)
-		`, adminRoleID, targetUserID).Scan(&isAdmin, &adminCount); err != nil {
-			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
-			return
-		}
-		if isAdmin && adminCount <= 1 {
-			writeError(w, http.StatusBadRequest, "cannot remove the last project admin", "validation")
-			return
-		}
 	}
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)

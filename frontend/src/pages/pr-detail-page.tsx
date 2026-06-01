@@ -228,60 +228,32 @@ export default function PRDetailPage() {
   const hasApproved =
     user && pr?.approvals?.some((a) => a.user_id === user.id && !a.withdrawn_at)
 
-  function handleClose() {
+  function runPRAction(
+    mutation: { mutate: (id: number, opts: { onSuccess: () => void; onError: (err: unknown) => void }) => void },
+    successMsg: string,
+    errorMsg: string,
+  ) {
     if (!pr) return
-    closePR.mutate(pr.id, {
-      onSuccess: () => {
-        toast.success("Pull request closed")
-      },
-      onError: (err) => {
-        toast.error("Failed to close pull request", {
-          description: (err as Error).message,
-        })
-      },
+    mutation.mutate(pr.id, {
+      onSuccess: () => toast.success(successMsg),
+      onError: (err) => toast.error(errorMsg, { description: (err as Error).message }),
     })
+  }
+
+  function handleClose() {
+    runPRAction(closePR, "Pull request closed", "Failed to close pull request")
   }
 
   function handleMerge() {
-    if (!pr) return
-    mergePR.mutate(pr.id, {
-      onSuccess: () => {
-        toast.success("Pull request merged")
-      },
-      onError: (err) => {
-        toast.error("Failed to merge pull request", {
-          description: (err as Error).message,
-        })
-      },
-    })
+    runPRAction(mergePR, "Pull request merged", "Failed to merge pull request")
   }
 
   function handleApprove() {
-    if (!pr) return
-    approvePR.mutate(pr.id, {
-      onSuccess: () => {
-        toast.success("Pull request approved")
-      },
-      onError: (err) => {
-        toast.error("Failed to approve pull request", {
-          description: (err as Error).message,
-        })
-      },
-    })
+    runPRAction(approvePR, "Pull request approved", "Failed to approve pull request")
   }
 
   function handleWithdraw() {
-    if (!pr) return
-    withdrawApproval.mutate(pr.id, {
-      onSuccess: () => {
-        toast.success("Approval withdrawn")
-      },
-      onError: (err) => {
-        toast.error("Failed to withdraw approval", {
-          description: (err as Error).message,
-        })
-      },
-    })
+    runPRAction(withdrawApproval, "Approval withdrawn", "Failed to withdraw approval")
   }
 
   if (isLoading) {

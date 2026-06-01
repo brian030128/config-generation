@@ -173,46 +173,60 @@ func RequirePermission(
 ) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			user := UserFromContext(r.Context())
-
-			su, err := isSuperuser(r.Context(), db, user.UserID)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to check user", "internal")
-				return
-			}
-			if su {
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			perms, err := loadEffectivePermissions(r.Context(), db, user.UserID)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to load permissions", "internal")
-				return
-			}
-
-			req := models.PermissionRequirement{
-				Action:   action,
-				Resource: resource,
-			}
-			if projectKey != nil {
-				req.KeyProject = projectKey(r)
-			}
-			if envKey != nil {
-				req.KeyEnv = envKey(r)
-			}
-			if nameKey != nil {
-				req.KeyName = nameKey(r)
-			}
-
-			if !HasPermission(perms, req) {
-				writeError(w, http.StatusForbidden, "insufficient permissions", "forbidden")
-				return
-			}
-
-			next.ServeHTTP(w, r)
+			servePermissionGate(db, action, resource, projectKey, envKey, nameKey, next, w, r)
 		})
 	}
+}
+
+// servePermissionGate is the body of the RequirePermission middleware,
+// extracted from the closure-within-closure so its cognitive complexity stays
+// within Sonar's limit. Behavior is unchanged.
+func servePermissionGate(
+	db *sql.DB,
+	action, resource string,
+	projectKey, envKey, nameKey KeyExtractor,
+	next http.Handler,
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	user := UserFromContext(r.Context())
+
+	su, err := isSuperuser(r.Context(), db, user.UserID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to check user", "internal")
+		return
+	}
+	if su {
+		next.ServeHTTP(w, r)
+		return
+	}
+
+	perms, err := loadEffectivePermissions(r.Context(), db, user.UserID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load permissions", "internal")
+		return
+	}
+
+	req := models.PermissionRequirement{
+		Action:   action,
+		Resource: resource,
+	}
+	if projectKey != nil {
+		req.KeyProject = projectKey(r)
+	}
+	if envKey != nil {
+		req.KeyEnv = envKey(r)
+	}
+	if nameKey != nil {
+		req.KeyName = nameKey(r)
+	}
+
+	if !HasPermission(perms, req) {
+		writeError(w, http.StatusForbidden, "insufficient permissions", "forbidden")
+		return
+	}
+
+	next.ServeHTTP(w, r)
 }
 
 // CheckPermission is a helper for handlers that need to check permissions

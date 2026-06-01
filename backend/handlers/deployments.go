@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/brian/config-generation/backend/models"
@@ -153,30 +155,10 @@ func (h *DeploymentHandler) Execute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Insert deployment entries
-	for _, rr := range renderResults {
-		var entryID int64
-		err = tx.QueryRowContext(r.Context(), `
-			INSERT INTO deployment_entries (deployment_id, template_name, template_version_id, values_version_id, rendered_output)
-			VALUES ($1, $2, $3, $4, $5)
-			RETURNING id
-		`, deploymentID, rr.TemplateName, req.TemplateVersions[rr.TemplateName], req.ValuesVersionID, *rr.RenderedOutput).Scan(&entryID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to create deployment entry", "internal")
-			return
-		}
-
-		// Insert global value refs for this entry
-		for gvName, gvVersion := range req.GlobalValuesVersions {
-			_, err = tx.ExecContext(r.Context(), `
-				INSERT INTO deployment_entry_global_refs (deployment_entry_id, global_values_name, global_values_version_id)
-				VALUES ($1, $2, $3)
-			`, entryID, gvName, gvVersion)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to create global value ref", "internal")
-				return
-			}
-		}
+	// Insert deployment entries (and their global-value refs).
+	if err := h.insertDeploymentEntries(r.Context(), tx, deploymentID, renderResults, req); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error(), "internal")
+		return
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -285,6 +267,38 @@ func (h *DeploymentHandler) GetLatest(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- helpers ---
+
+// insertDeploymentEntries writes a deployment_entries row per rendered
+// template plus its deployment_entry_global_refs rows. Extracted from Execute
+// to keep its cognitive complexity within Sonar's limit. Errors are wrapped
+// with a stable message so the caller can surface them as 500s.
+func (h *DeploymentHandler) insertDeploymentEntries(
+	ctx context.Context,
+	tx *sql.Tx,
+	deploymentID int64,
+	renderResults []services.RenderResult,
+	req models.DeployRequest,
+) error {
+	for _, rr := range renderResults {
+		var entryID int64
+		if err := tx.QueryRowContext(ctx, `
+			INSERT INTO deployment_entries (deployment_id, template_name, template_version_id, values_version_id, rendered_output)
+			VALUES ($1, $2, $3, $4, $5)
+			RETURNING id
+		`, deploymentID, rr.TemplateName, req.TemplateVersions[rr.TemplateName], req.ValuesVersionID, *rr.RenderedOutput).Scan(&entryID); err != nil {
+			return fmt.Errorf("failed to create deployment entry")
+		}
+		for gvName, gvVersion := range req.GlobalValuesVersions {
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO deployment_entry_global_refs (deployment_entry_id, global_values_name, global_values_version_id)
+				VALUES ($1, $2, $3)
+			`, entryID, gvName, gvVersion); err != nil {
+				return fmt.Errorf("failed to create global value ref")
+			}
+		}
+	}
+	return nil
+}
 
 func (h *DeploymentHandler) resolveProjectEnv(w http.ResponseWriter, r *http.Request) (int64, int64, bool) {
 	projectID, err := resolveProjectID(r, h.DB)
