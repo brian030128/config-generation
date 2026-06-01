@@ -339,6 +339,40 @@ func (h *PullRequestHandler) Approve(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, pr)
 }
 
+// reevaluateApprovedAfterWithdraw recomputes whether an approved PR still
+// satisfies its approval condition after one approver withdraws; if not, it
+// transitions the PR back to "open" and refreshes the approval-condition and
+// approvals fields on pr. A no-op when pr.Status != "approved". Extracted from
+// WithdrawApproval to keep its cognitive complexity within limit.
+func (h *PullRequestHandler) reevaluateApprovedAfterWithdraw(ctx context.Context, pr *models.PullRequest) error {
+	if pr.Status != "approved" {
+		return nil
+	}
+	condition, err := h.loadApprovalCondition(ctx, pr)
+	if err != nil {
+		return err
+	}
+	approvals, err := h.loadApprovals(ctx, pr.ID)
+	if err != nil {
+		return err
+	}
+	met, err := h.checkApprovalConditionMet(ctx, pr, condition, approvals)
+	if err != nil {
+		return err
+	}
+	if !met {
+		if _, err := h.DB.ExecContext(ctx, `
+			UPDATE pull_requests SET status = 'open', updated_at = NOW() WHERE id = $1
+		`, pr.ID); err != nil {
+			return err
+		}
+		pr.Status = "open"
+	}
+	pr.ApprovalCondition = condition
+	pr.Approvals = approvals
+	return nil
+}
+
 func (h *PullRequestHandler) WithdrawApproval(w http.ResponseWriter, r *http.Request) {
 	user := currentUser(r)
 	prID, err := urlParamInt64(r, "prID")
@@ -377,33 +411,9 @@ func (h *PullRequestHandler) WithdrawApproval(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if pr.Status == "approved" {
-		condition, err := h.loadApprovalCondition(r.Context(), &pr)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
-			return
-		}
-		approvals, err := h.loadApprovals(r.Context(), prID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
-			return
-		}
-		met, err := h.checkApprovalConditionMet(r.Context(), &pr, condition, approvals)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
-			return
-		}
-		if !met {
-			if _, err := h.DB.ExecContext(r.Context(), `
-				UPDATE pull_requests SET status = 'open', updated_at = NOW() WHERE id = $1
-			`, prID); err != nil {
-				writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
-				return
-			}
-			pr.Status = "open"
-		}
-		pr.ApprovalCondition = condition
-		pr.Approvals = approvals
+	if err := h.reevaluateApprovedAfterWithdraw(r.Context(), &pr); err != nil {
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
+		return
 	}
 
 	writeJSON(w, http.StatusOK, pr)

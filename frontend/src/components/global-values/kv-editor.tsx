@@ -20,6 +20,17 @@ interface KvEditorProps {
 
 type Entry = [string, GlobalValueValue]
 
+// replaceAt / removeAt are module-scope list helpers used by handleItemChange
+// and handleRemoveItem; lifting them out keeps the setEntries callback nesting
+// from exceeding 4 levels (Sonar S2004).
+function replaceAt(items: string[], index: number, value: string): string[] {
+  return items.map((it, j) => (j === index ? value : it))
+}
+
+function removeAt(items: string[], index: number): string[] {
+  return items.filter((_, j) => j !== index)
+}
+
 export function KvEditor({ name, data, readOnly = false }: Readonly<KvEditorProps>) {
   const [entries, setEntries] = useState<Entry[]>([])
   const navigate = useNavigate()
@@ -56,7 +67,7 @@ export function KvEditor({ name, data, readOnly = false }: Readonly<KvEditorProp
     setEntries((prev) =>
       prev.map((e, i) =>
         i === index && Array.isArray(e[1])
-          ? [e[0], e[1].map((it, j) => (j === itemIndex ? value : it))]
+          ? [e[0], replaceAt(e[1], itemIndex, value)]
           : e,
       ),
     )
@@ -74,7 +85,7 @@ export function KvEditor({ name, data, readOnly = false }: Readonly<KvEditorProp
     setEntries((prev) =>
       prev.map((e, i) =>
         i === index && Array.isArray(e[1])
-          ? [e[0], e[1].filter((_, j) => j !== itemIndex)]
+          ? [e[0], removeAt(e[1], itemIndex)]
           : e,
       ),
     )

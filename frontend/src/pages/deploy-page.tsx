@@ -108,15 +108,7 @@ export default function DeployPage() {
 
     if (latestDeploy && !latestDeployError) {
       // Use last deployment versions as defaults, falling back to latest for new templates
-      const mergedTmplVersions = { ...defaultTmplVersions }
-      for (const [name, ver] of Object.entries(
-        latestDeploy.template_versions,
-      )) {
-        if (name in mergedTmplVersions) {
-          mergedTmplVersions[name] = ver
-        }
-      }
-      setTemplateVersions(mergedTmplVersions)
+      setTemplateVersions(mergeTemplateVersions(defaultTmplVersions, latestDeploy.template_versions))
       setValuesVersionId(latestDeploy.values_version_id || defaultValuesVersion)
       setGvVersions(latestDeploy.global_values_versions ?? {})
     } else {
@@ -124,12 +116,7 @@ export default function DeployPage() {
       setValuesVersionId(defaultValuesVersion)
       // Scan values payload for global value refs to determine defaults
       if (valuesData?.payload) {
-        const refs = extractGlobalValueRefs(valuesData.payload)
-        const defaultGvVersions: Record<string, number> = {}
-        for (const name of refs) {
-          defaultGvVersions[name] = 0 // will be resolved when version lists load
-        }
-        setGvVersions(defaultGvVersions)
+        setGvVersions(gvVersionsFromValues(valuesData.payload))
       }
     }
     setVersionsInitialized(true)
@@ -788,4 +775,32 @@ function extractGlobalValueRefs(payload: Record<string, unknown>): string[] {
 function hasTemplateChanges(result: TemplateRenderResult): boolean {
   if (result.previous_output == null) return true
   return result.rendered_output !== result.previous_output
+}
+
+// mergeTemplateVersions overlays the versions from a prior deployment onto the
+// latest-version defaults, keeping latest for any template that no longer
+// appears in the historic deploy. Extracted from the version-init useEffect to
+// stay within Sonar's cognitive-complexity threshold.
+function mergeTemplateVersions(
+  defaults: Record<string, number>,
+  fromDeploy: Record<string, number>,
+): Record<string, number> {
+  const merged = { ...defaults }
+  for (const [name, ver] of Object.entries(fromDeploy)) {
+    if (name in merged) merged[name] = ver
+  }
+  return merged
+}
+
+// gvVersionsFromValues seeds a global-values-version map with 0s for every
+// global value referenced by the values payload. The real versions are
+// resolved later when the per-name version lists load.
+function gvVersionsFromValues(
+  payload: Record<string, unknown>,
+): Record<string, number> {
+  const defaults: Record<string, number> = {}
+  for (const name of extractGlobalValueRefs(payload)) {
+    defaults[name] = 0
+  }
+  return defaults
 }

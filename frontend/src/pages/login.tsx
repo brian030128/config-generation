@@ -23,6 +23,14 @@ function ProviderIcon({ name, className }: Readonly<{ name: string; className?: 
   return null
 }
 
+// settleAfterDoubleRAF defers `cb` past two animation frames so that the prior
+// state mutations (which start an exit transition) have flushed and applied
+// before the next class change kicks off the entry transition. Defined at
+// module scope to keep switchTo's callback nesting under 4 levels.
+function settleAfterDoubleRAF(cb: () => void) {
+  requestAnimationFrame(() => requestAnimationFrame(cb))
+}
+
 type View = "login" | "register"
 type Pos = "center" | "exit-left" | "exit-right" | "enter-from-left" | "enter-from-right"
 
@@ -94,11 +102,7 @@ export default function LoginPage() {
     setTimeout(() => {
       setView(to)
       setPos(forward ? "enter-from-right" : "enter-from-left")
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          setPos("center")
-        })
-      })
+      settleAfterDoubleRAF(() => setPos("center"))
     }, 220)
   }
 

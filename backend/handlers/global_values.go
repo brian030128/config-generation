@@ -42,6 +42,22 @@ func validateFlatJSON(payload json.RawMessage) error {
 	return nil
 }
 
+// validateCreateGlobalValuesRequest returns a non-zero status with message and
+// code when the request fails validation. Extracted to keep Create within
+// Sonar's cognitive-complexity limit.
+func validateCreateGlobalValuesRequest(req models.CreateGlobalValuesRequest) (int, string, string) {
+	if req.Name == "" {
+		return http.StatusBadRequest, "name is required", "validation"
+	}
+	if len(req.Payload) == 0 {
+		return http.StatusBadRequest, "payload is required", "validation"
+	}
+	if err := validateFlatJSON(req.Payload); err != nil {
+		return http.StatusBadRequest, err.Error(), "validation"
+	}
+	return 0, "", ""
+}
+
 func (h *GlobalValuesHandler) Create(w http.ResponseWriter, r *http.Request) {
 	user := currentUser(r)
 
@@ -50,16 +66,8 @@ func (h *GlobalValuesHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, msgInvalidRequestBody, "bad_request")
 		return
 	}
-	if req.Name == "" {
-		writeError(w, http.StatusBadRequest, "name is required", "validation")
-		return
-	}
-	if len(req.Payload) == 0 {
-		writeError(w, http.StatusBadRequest, "payload is required", "validation")
-		return
-	}
-	if err := validateFlatJSON(req.Payload); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error(), "validation")
+	if status, msg, code := validateCreateGlobalValuesRequest(req); status != 0 {
+		writeError(w, status, msg, code)
 		return
 	}
 

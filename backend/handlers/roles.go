@@ -336,52 +336,67 @@ func scanRoles(rows *sql.Rows) ([]models.Role, error) {
 // joined from users) for each role in place.
 func (h *RoleHandler) loadRolePermsAndMembers(ctx context.Context, roles []models.Role) error {
 	for i := range roles {
-		permRows, err := h.DB.QueryContext(ctx, `
-			SELECT id, role_id, action, resource, key_project, key_env, key_name
-			FROM role_permissions WHERE role_id = $1
-		`, roles[i].ID)
+		perms, err := h.loadPermissionsForRole(ctx, roles[i].ID)
 		if err != nil {
 			return err
 		}
-		roles[i].Permissions = []models.RolePermission{}
-		for permRows.Next() {
-			var rp models.RolePermission
-			if err := permRows.Scan(&rp.ID, &rp.RoleID, &rp.Action, &rp.Resource, &rp.KeyProject, &rp.KeyEnv, &rp.KeyName); err != nil {
-				permRows.Close()
-				return err
-			}
-			roles[i].Permissions = append(roles[i].Permissions, rp)
-		}
-		permRows.Close()
-		if err := permRows.Err(); err != nil {
-			return err
-		}
-
-		memberRows, err := h.DB.QueryContext(ctx, `
-			SELECT ur.id, ur.user_id, ur.role_id, ur.granted_by, ur.granted_at, u.username, u.display_name
-			FROM user_roles ur
-			JOIN users u ON u.id = ur.user_id
-			WHERE ur.role_id = $1
-			ORDER BY u.username
-		`, roles[i].ID)
+		roles[i].Permissions = perms
+		members, err := h.loadMembersForRole(ctx, roles[i].ID)
 		if err != nil {
 			return err
 		}
-		roles[i].Members = []models.UserRole{}
-		for memberRows.Next() {
-			var ur models.UserRole
-			if err := memberRows.Scan(&ur.ID, &ur.UserID, &ur.RoleID, &ur.GrantedBy, &ur.GrantedAt, &ur.Username, &ur.DisplayName); err != nil {
-				memberRows.Close()
-				return err
-			}
-			roles[i].Members = append(roles[i].Members, ur)
-		}
-		memberRows.Close()
-		if err := memberRows.Err(); err != nil {
-			return err
-		}
+		roles[i].Members = members
 	}
 	return nil
+}
+
+// loadPermissionsForRole returns all permission atoms attached to a role.
+// Extracted from loadRolePermsAndMembers to keep its cognitive complexity
+// within Sonar's limit.
+func (h *RoleHandler) loadPermissionsForRole(ctx context.Context, roleID int64) ([]models.RolePermission, error) {
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT id, role_id, action, resource, key_project, key_env, key_name
+		FROM role_permissions WHERE role_id = $1
+	`, roleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	perms := []models.RolePermission{}
+	for rows.Next() {
+		var rp models.RolePermission
+		if err := rows.Scan(&rp.ID, &rp.RoleID, &rp.Action, &rp.Resource, &rp.KeyProject, &rp.KeyEnv, &rp.KeyName); err != nil {
+			return nil, err
+		}
+		perms = append(perms, rp)
+	}
+	return perms, rows.Err()
+}
+
+// loadMembersForRole returns the users assigned to a role with their
+// username/display_name. Extracted from loadRolePermsAndMembers for the same
+// reason as loadPermissionsForRole.
+func (h *RoleHandler) loadMembersForRole(ctx context.Context, roleID int64) ([]models.UserRole, error) {
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT ur.id, ur.user_id, ur.role_id, ur.granted_by, ur.granted_at, u.username, u.display_name
+		FROM user_roles ur
+		JOIN users u ON u.id = ur.user_id
+		WHERE ur.role_id = $1
+		ORDER BY u.username
+	`, roleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	members := []models.UserRole{}
+	for rows.Next() {
+		var ur models.UserRole
+		if err := rows.Scan(&ur.ID, &ur.UserID, &ur.RoleID, &ur.GrantedBy, &ur.GrantedAt, &ur.Username, &ur.DisplayName); err != nil {
+			return nil, err
+		}
+		members = append(members, ur)
+	}
+	return members, rows.Err()
 }
 
 // ptrToString converts a *string to a string, returning "" for nil.
