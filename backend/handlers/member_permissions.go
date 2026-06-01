@@ -80,6 +80,75 @@ func (h *ProjectMemberHandler) projectEnvNames(ctx context.Context, projectID in
 	return names, rows.Err()
 }
 
+// loadMemberPermissions reads the managed role's atoms and assembles them
+// into a MemberPermissions struct. Extracted from GetMemberPermissions to
+// keep its cognitive complexity within Sonar's limit.
+func (h *ProjectMemberHandler) loadMemberPermissions(ctx context.Context, roleName string) (models.MemberPermissions, error) {
+	var perms models.MemberPermissions
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT rp.action, rp.resource, rp.key_env
+		FROM roles r
+		JOIN role_permissions rp ON rp.role_id = r.id
+		WHERE r.name = $1
+	`, roleName)
+	if err != nil {
+		return perms, err
+	}
+	defer rows.Close()
+
+	tmplAtoms := templatePermAtoms()
+	envAccess := map[string]*models.EnvValueAccess{}
+	for rows.Next() {
+		var action, resource string
+		var keyEnv *string
+		if err := rows.Scan(&action, &resource, &keyEnv); err != nil {
+			return perms, err
+		}
+		applyMemberAtomRow(&perms, envAccess, tmplAtoms, action, resource, keyEnv)
+	}
+	if err := rows.Err(); err != nil {
+		return perms, err
+	}
+
+	perms.Environments = []models.EnvValueAccess{}
+	for _, e := range envAccess {
+		perms.Environments = append(perms.Environments, *e)
+	}
+	sort.Slice(perms.Environments, func(i, j int) bool {
+		return perms.Environments[i].Env < perms.Environments[j].Env
+	})
+	return perms, nil
+}
+
+// applyMemberAtomRow folds one role_permissions row into the perms struct or
+// the env-access map.
+func applyMemberAtomRow(perms *models.MemberPermissions, envAccess map[string]*models.EnvValueAccess, tmplAtoms []templatePermAtom, action, resource string, keyEnv *string) {
+	switch resource {
+	case models.ResourceProjectTemplates:
+		for _, a := range tmplAtoms {
+			if a.action == action {
+				a.set(perms)
+			}
+		}
+	case models.ResourceProjectValues:
+		if keyEnv == nil {
+			return
+		}
+		e := envAccess[*keyEnv]
+		if e == nil {
+			e = &models.EnvValueAccess{Env: *keyEnv}
+			envAccess[*keyEnv] = e
+		}
+		switch action {
+		case models.ActionRead:
+			e.Read = true
+		case models.ActionWrite:
+			e.Read = true
+			e.Write = true
+		}
+	}
+}
+
 // GetMemberPermissions returns the member's granted capabilities.
 func (h *ProjectMemberHandler) GetMemberPermissions(w http.ResponseWriter, r *http.Request) {
 	projectName := chi.URLParam(r, "projectName")
@@ -103,67 +172,94 @@ func (h *ProjectMemberHandler) GetMemberPermissions(w http.ResponseWriter, r *ht
 		return
 	}
 
-	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT rp.action, rp.resource, rp.key_env
-		FROM roles r
-		JOIN role_permissions rp ON rp.role_id = r.id
-		WHERE r.name = $1
-	`, managedMemberRoleName(projectName, targetUserID))
+	perms, err := h.loadMemberPermissions(r.Context(), managedMemberRoleName(projectName, targetUserID))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
-	defer rows.Close()
-
-	var perms models.MemberPermissions
-	tmplAtoms := templatePermAtoms()
-	envAccess := map[string]*models.EnvValueAccess{} // env → access
-	for rows.Next() {
-		var action, resource string
-		var keyEnv *string
-		if err := rows.Scan(&action, &resource, &keyEnv); err != nil {
-			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
-			return
-		}
-		switch resource {
-		case models.ResourceProjectTemplates:
-			for _, a := range tmplAtoms {
-				if a.action == action {
-					a.set(&perms)
-				}
-			}
-		case models.ResourceProjectValues:
-			if keyEnv == nil {
-				continue
-			}
-			e := envAccess[*keyEnv]
-			if e == nil {
-				e = &models.EnvValueAccess{Env: *keyEnv}
-				envAccess[*keyEnv] = e
-			}
-			switch action {
-			case models.ActionRead:
-				e.Read = true
-			case models.ActionWrite:
-				e.Read = true
-				e.Write = true
-			}
-		}
-	}
-	if err := rows.Err(); err != nil {
-		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
-		return
-	}
-
-	perms.Environments = []models.EnvValueAccess{}
-	for _, e := range envAccess {
-		perms.Environments = append(perms.Environments, *e)
-	}
-	sort.Slice(perms.Environments, func(i, j int) bool {
-		return perms.Environments[i].Env < perms.Environments[j].Env
-	})
-
 	writeJSON(w, http.StatusOK, perms)
+}
+
+// validateAndDedupEnvAccess validates each requested env exists and folds the
+// list into a map (last entry per env wins). Returns status==0 on success.
+func (h *ProjectMemberHandler) validateAndDedupEnvAccess(ctx context.Context, projectID int64, envs []models.EnvValueAccess) (map[string]models.EnvValueAccess, int, string, string) {
+	envNames, err := h.projectEnvNames(ctx, projectID)
+	if err != nil {
+		return nil, http.StatusInternalServerError, msgDatabaseError, "internal"
+	}
+	envAccess := map[string]models.EnvValueAccess{}
+	for _, e := range envs {
+		if !envNames[e.Env] {
+			return nil, http.StatusBadRequest, fmt.Sprintf("unknown environment %q", e.Env), "validation"
+		}
+		envAccess[e.Env] = e
+	}
+	return envAccess, 0, "", ""
+}
+
+// upsertManagedMemberRole returns the id of the managed per-member role,
+// creating it if needed.
+func upsertManagedMemberRole(ctx context.Context, tx *sql.Tx, roleName string) (int64, error) {
+	var roleID int64
+	err := tx.QueryRowContext(ctx, `SELECT id FROM roles WHERE name = $1`, roleName).Scan(&roleID)
+	if err == sql.ErrNoRows {
+		err = tx.QueryRowContext(ctx, `
+			INSERT INTO roles (name, is_auto_created) VALUES ($1, false)
+			RETURNING id
+		`, roleName).Scan(&roleID)
+	}
+	return roleID, err
+}
+
+// rewriteMemberRoleAtoms clears and rewrites the role's atoms from req +
+// envAccess.
+func rewriteMemberRoleAtoms(ctx context.Context, tx *sql.Tx, roleID int64, projectName string, req models.MemberPermissions, envAccess map[string]models.EnvValueAccess) (int, string, string) {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM role_permissions WHERE role_id = $1`, roleID); err != nil {
+		return http.StatusInternalServerError, "failed to clear permissions", "internal"
+	}
+
+	insertAtom := func(action, resource, env string) error {
+		_, e := tx.ExecContext(ctx, `
+			INSERT INTO role_permissions (role_id, action, resource, key_project, key_env)
+			VALUES ($1, $2, $3, $4, NULLIF($5, ''))
+		`, roleID, action, resource, projectName, env)
+		return e
+	}
+
+	for _, a := range templatePermAtoms() {
+		if !a.enabled(req) {
+			continue
+		}
+		if err := insertAtom(a.action, models.ResourceProjectTemplates, ""); err != nil {
+			return http.StatusInternalServerError, msgFailedToSetPerms, "internal"
+		}
+	}
+
+	for env, access := range envAccess {
+		if status, msg, code := insertEnvAccessAtoms(insertAtom, env, access); status != 0 {
+			return status, msg, code
+		}
+	}
+	return 0, "", ""
+}
+
+// insertEnvAccessAtoms writes the atoms for one env's access level.
+func insertEnvAccessAtoms(insertAtom func(action, resource, env string) error, env string, access models.EnvValueAccess) (int, string, string) {
+	switch {
+	case access.Write:
+		// write + create (bootstrap), both env-scoped; read is implied.
+		if err := insertAtom(models.ActionWrite, models.ResourceProjectValues, env); err != nil {
+			return http.StatusInternalServerError, msgFailedToSetPerms, "internal"
+		}
+		if err := insertAtom(models.ActionCreate, models.ResourceEnvValues, env); err != nil {
+			return http.StatusInternalServerError, msgFailedToSetPerms, "internal"
+		}
+	case access.Read:
+		if err := insertAtom(models.ActionRead, models.ResourceProjectValues, env); err != nil {
+			return http.StatusInternalServerError, msgFailedToSetPerms, "internal"
+		}
+	}
+	return 0, "", ""
 }
 
 // SetMemberPermissions replaces the member's granted capabilities. It finds or
@@ -197,19 +293,10 @@ func (h *ProjectMemberHandler) SetMemberPermissions(w http.ResponseWriter, r *ht
 		return
 	}
 
-	// Validate and de-duplicate the per-env access (last entry per env wins).
-	envNames, err := h.projectEnvNames(r.Context(), projectID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
+	envAccess, status, msg, code := h.validateAndDedupEnvAccess(r.Context(), projectID, req.Environments)
+	if status != 0 {
+		writeError(w, status, msg, code)
 		return
-	}
-	envAccess := map[string]models.EnvValueAccess{}
-	for _, e := range req.Environments {
-		if !envNames[e.Env] {
-			writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown environment %q", e.Env), "validation")
-			return
-		}
-		envAccess[e.Env] = e
 	}
 
 	actor := currentUser(r)
@@ -221,65 +308,16 @@ func (h *ProjectMemberHandler) SetMemberPermissions(w http.ResponseWriter, r *ht
 	}
 	defer tx.Rollback()
 
-	// Find or create the managed role (a global role with a per-member unique
-	// name; its atoms carry key_project for scope).
 	roleName := managedMemberRoleName(projectName, targetUserID)
-	var roleID int64
-	err = tx.QueryRowContext(r.Context(),
-		`SELECT id FROM roles WHERE name = $1`, roleName).Scan(&roleID)
-	if err == sql.ErrNoRows {
-		err = tx.QueryRowContext(r.Context(), `
-			INSERT INTO roles (name, is_auto_created) VALUES ($1, false)
-			RETURNING id
-		`, roleName).Scan(&roleID)
-	}
+	roleID, err := upsertManagedMemberRole(r.Context(), tx, roleName)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to upsert member role", "internal")
 		return
 	}
 
-	// Rewrite atoms: clear, then insert template atoms + per-env value atoms.
-	if _, err = tx.ExecContext(r.Context(), `DELETE FROM role_permissions WHERE role_id = $1`, roleID); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to clear permissions", "internal")
+	if status, msg, code := rewriteMemberRoleAtoms(r.Context(), tx, roleID, projectName, req, envAccess); status != 0 {
+		writeError(w, status, msg, code)
 		return
-	}
-
-	insertAtom := func(action, resource, env string) error {
-		_, e := tx.ExecContext(r.Context(), `
-			INSERT INTO role_permissions (role_id, action, resource, key_project, key_env)
-			VALUES ($1, $2, $3, $4, NULLIF($5, ''))
-		`, roleID, action, resource, projectName, env)
-		return e
-	}
-
-	for _, a := range templatePermAtoms() {
-		if !a.enabled(req) {
-			continue
-		}
-		if err = insertAtom(a.action, models.ResourceProjectTemplates, ""); err != nil {
-			writeError(w, http.StatusInternalServerError, msgFailedToSetPerms, "internal")
-			return
-		}
-	}
-
-	for env, access := range envAccess {
-		switch {
-		case access.Write:
-			// write + create (bootstrap), both env-scoped; read is implied.
-			if err = insertAtom(models.ActionWrite, models.ResourceProjectValues, env); err != nil {
-				writeError(w, http.StatusInternalServerError, msgFailedToSetPerms, "internal")
-				return
-			}
-			if err = insertAtom(models.ActionCreate, models.ResourceEnvValues, env); err != nil {
-				writeError(w, http.StatusInternalServerError, msgFailedToSetPerms, "internal")
-				return
-			}
-		case access.Read:
-			if err = insertAtom(models.ActionRead, models.ResourceProjectValues, env); err != nil {
-				writeError(w, http.StatusInternalServerError, msgFailedToSetPerms, "internal")
-				return
-			}
-		}
 	}
 
 	// Ensure the member is assigned to the managed role.

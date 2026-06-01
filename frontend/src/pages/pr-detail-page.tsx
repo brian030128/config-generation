@@ -211,9 +211,8 @@ export default function PRDetailPage() {
   const { user } = useAuth()
   const { data: pr, isLoading, error } = usePullRequest(prId)
   const { data: projects } = useProjects()
-  const projectName = pr?.project_id
-    ? projects?.items.find((p) => p.id === pr.project_id)?.name ?? ""
-    : ""
+  const projectName =
+    projects?.items.find((p) => p.id === pr?.project_id)?.name ?? ""
   const closePR = useClosePullRequest()
   const mergePR = useMergePullRequest()
   const approvePR = useApprovePullRequest()
@@ -238,22 +237,6 @@ export default function PRDetailPage() {
       onSuccess: () => toast.success(successMsg),
       onError: (err) => toast.error(errorMsg, { description: (err as Error).message }),
     })
-  }
-
-  function handleClose() {
-    runPRAction(closePR, "Pull request closed", "Failed to close pull request")
-  }
-
-  function handleMerge() {
-    runPRAction(mergePR, "Pull request merged", "Failed to merge pull request")
-  }
-
-  function handleApprove() {
-    runPRAction(approvePR, "Pull request approved", "Failed to approve pull request")
-  }
-
-  function handleWithdraw() {
-    runPRAction(withdrawApproval, "Approval withdrawn", "Failed to withdraw approval")
   }
 
   if (isLoading) {
@@ -373,7 +356,7 @@ export default function PRDetailPage() {
           {isOpenForApproval && !hasApproved && (
             <Button
               variant="outline"
-              onClick={handleApprove}
+              onClick={() => runPRAction(approvePR, "Pull request approved", "Failed to approve pull request")}
               disabled={approvePR.isPending}
             >
               {approvePR.isPending ? "Approving..." : "Approve"}
@@ -382,7 +365,7 @@ export default function PRDetailPage() {
           {isOpenForApproval && hasApproved && (
             <Button
               variant="ghost"
-              onClick={handleWithdraw}
+              onClick={() => runPRAction(withdrawApproval, "Approval withdrawn", "Failed to withdraw approval")}
               disabled={withdrawApproval.isPending}
             >
               {withdrawApproval.isPending ? "Withdrawing..." : "Withdraw Approval"}
@@ -390,7 +373,7 @@ export default function PRDetailPage() {
           )}
           {canMerge && (
             <Button
-              onClick={handleMerge}
+              onClick={() => runPRAction(mergePR, "Pull request merged", "Failed to merge pull request")}
               disabled={mergePR.isPending}
             >
               {mergePR.isPending ? "Merging..." : "Merge"}
@@ -399,7 +382,7 @@ export default function PRDetailPage() {
           {canClose && (
             <Button
               variant="destructive"
-              onClick={handleClose}
+              onClick={() => runPRAction(closePR, "Pull request closed", "Failed to close pull request")}
               disabled={closePR.isPending}
             >
               {closePR.isPending ? "Closing..." : "Close PR"}

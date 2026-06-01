@@ -107,6 +107,87 @@ export function roleGrantsProjectRead(
   )
 }
 
+// applyTemplateAtom folds a project_templates atom into caps (or extras).
+function applyTemplateAtom(
+  p: RolePermission,
+  caps: ProjectRoleCapabilities,
+  extraAtoms: PermissionAtomInput[],
+): void {
+  if (p.action === "read") caps.templates.read_templates = true
+  else if (p.action === "write") caps.templates.write_templates = true
+  else if (p.action === "delete") caps.templates.delete_templates = true
+  else extraAtoms.push(toInput(p))
+}
+
+// applyProjectValuesAtom folds a project_values atom into envLevels,
+// manage_environments, or extras.
+function applyProjectValuesAtom(
+  p: RolePermission,
+  caps: ProjectRoleCapabilities,
+  extraAtoms: PermissionAtomInput[],
+): void {
+  if (p.key_env === WILDCARD) {
+    if (p.action === "delete") caps.manage_environments = true
+    else extraAtoms.push(toInput(p))
+    return
+  }
+  if (!p.key_env) {
+    extraAtoms.push(toInput(p))
+    return
+  }
+  if (p.action === "write") {
+    caps.envLevels[p.key_env] = "write"
+  } else if (p.action === "read") {
+    if (caps.envLevels[p.key_env] !== "write") {
+      caps.envLevels[p.key_env] = "read"
+    }
+  } else {
+    extraAtoms.push(toInput(p))
+  }
+}
+
+// applyEnvValuesAtom routes env_values atoms; per-env creates are deferred so
+// they can be reconciled with envLevels after the main pass.
+function applyEnvValuesAtom(
+  p: RolePermission,
+  caps: ProjectRoleCapabilities,
+  pendingEnvCreates: RolePermission[],
+  extraAtoms: PermissionAtomInput[],
+): void {
+  if (p.key_env === WILDCARD) {
+    if (p.action === "create") caps.manage_environments = true
+    else extraAtoms.push(toInput(p))
+    return
+  }
+  if (p.action === "create" && p.key_env) {
+    pendingEnvCreates.push(p)
+    return
+  }
+  extraAtoms.push(toInput(p))
+}
+
+// applyScopedProjectAtom folds non-resource-specific project atoms (read/
+// delete on the project itself, or any grant action) into caps. Returns true
+// when the atom was consumed.
+function applyScopedProjectAtom(
+  p: RolePermission,
+  caps: ProjectRoleCapabilities,
+): boolean {
+  if (p.resource === "project" && p.action === "read") {
+    caps.read_project = true
+    return true
+  }
+  if (p.resource === "project" && p.action === "delete") {
+    caps.delete_project = true
+    return true
+  }
+  if (p.action === "grant") {
+    caps.manage_members_roles = true
+    return true
+  }
+  return false
+}
+
 export function projectAtomsToCapabilities(
   perms: RolePermission[],
   projectName: string,
@@ -118,60 +199,19 @@ export function projectAtomsToCapabilities(
   const pendingEnvCreates: RolePermission[] = []
 
   for (const p of perms) {
-    const sameProject = p.key_project === projectName
-
-    if (sameProject && p.resource === "project_templates") {
-      if (p.action === "read") caps.templates.read_templates = true
-      else if (p.action === "write") caps.templates.write_templates = true
-      else if (p.action === "delete") caps.templates.delete_templates = true
-      else extraAtoms.push(toInput(p))
+    if (p.key_project !== projectName) {
+      extraAtoms.push(toInput(p))
       continue
     }
-
-    if (sameProject && p.resource === "project_values") {
-      if (p.key_env === WILDCARD) {
-        if (p.action === "delete") caps.manage_environments = true
-        else extraAtoms.push(toInput(p))
-      } else if (p.key_env) {
-        if (p.action === "write") caps.envLevels[p.key_env] = "write"
-        else if (p.action === "read") {
-          if (caps.envLevels[p.key_env] !== "write")
-            caps.envLevels[p.key_env] = "read"
-        } else extraAtoms.push(toInput(p))
-      } else {
-        extraAtoms.push(toInput(p))
-      }
-      continue
+    if (p.resource === "project_templates") {
+      applyTemplateAtom(p, caps, extraAtoms)
+    } else if (p.resource === "project_values") {
+      applyProjectValuesAtom(p, caps, extraAtoms)
+    } else if (p.resource === "env_values") {
+      applyEnvValuesAtom(p, caps, pendingEnvCreates, extraAtoms)
+    } else if (!applyScopedProjectAtom(p, caps)) {
+      extraAtoms.push(toInput(p))
     }
-
-    if (sameProject && p.resource === "env_values") {
-      if (p.key_env === WILDCARD) {
-        if (p.action === "create") caps.manage_environments = true
-        else extraAtoms.push(toInput(p))
-      } else if (p.action === "create" && p.key_env) {
-        pendingEnvCreates.push(p)
-      } else {
-        extraAtoms.push(toInput(p))
-      }
-      continue
-    }
-
-    if (sameProject && p.resource === "project" && p.action === "read") {
-      caps.read_project = true
-      continue
-    }
-
-    if (sameProject && p.resource === "project" && p.action === "delete") {
-      caps.delete_project = true
-      continue
-    }
-
-    if (sameProject && p.action === "grant") {
-      caps.manage_members_roles = true
-      continue
-    }
-
-    extraAtoms.push(toInput(p))
   }
 
   // A per-env create that pairs with write access is implied (re-emitted on

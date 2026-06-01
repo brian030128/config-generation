@@ -171,11 +171,25 @@ func RequirePermission(
 	envKey KeyExtractor,
 	nameKey KeyExtractor,
 ) func(http.Handler) http.Handler {
+	cfg := permissionGateConfig{
+		action:     action,
+		resource:   resource,
+		projectKey: projectKey,
+		envKey:     envKey,
+		nameKey:    nameKey,
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			servePermissionGate(db, action, resource, projectKey, envKey, nameKey, next, w, r)
+			servePermissionGate(db, cfg, next, w, r)
 		})
 	}
+}
+
+// permissionGateConfig collects the static config a RequirePermission gate is
+// built with so servePermissionGate stays within Sonar's parameter limit.
+type permissionGateConfig struct {
+	action, resource            string
+	projectKey, envKey, nameKey KeyExtractor
 }
 
 // servePermissionGate is the body of the RequirePermission middleware,
@@ -183,8 +197,7 @@ func RequirePermission(
 // within Sonar's limit. Behavior is unchanged.
 func servePermissionGate(
 	db *sql.DB,
-	action, resource string,
-	projectKey, envKey, nameKey KeyExtractor,
+	cfg permissionGateConfig,
 	next http.Handler,
 	w http.ResponseWriter,
 	r *http.Request,
@@ -208,17 +221,17 @@ func servePermissionGate(
 	}
 
 	req := models.PermissionRequirement{
-		Action:   action,
-		Resource: resource,
+		Action:   cfg.action,
+		Resource: cfg.resource,
 	}
-	if projectKey != nil {
-		req.KeyProject = projectKey(r)
+	if cfg.projectKey != nil {
+		req.KeyProject = cfg.projectKey(r)
 	}
-	if envKey != nil {
-		req.KeyEnv = envKey(r)
+	if cfg.envKey != nil {
+		req.KeyEnv = cfg.envKey(r)
 	}
-	if nameKey != nil {
-		req.KeyName = nameKey(r)
+	if cfg.nameKey != nil {
+		req.KeyName = cfg.nameKey(r)
 	}
 
 	if !HasPermission(perms, req) {
