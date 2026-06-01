@@ -12,6 +12,18 @@ interface EnvironmentListProps {
   workspaceMode?: boolean
 }
 
+function environmentStatusLabel({
+  restricted,
+  hasValues,
+}: {
+  restricted: boolean
+  hasValues: boolean
+}): string {
+  if (restricted) return "restricted"
+  if (hasValues) return "configured"
+  return "not configured"
+}
+
 export function EnvironmentList({
   projectName,
   workspaceMode,
@@ -130,11 +142,7 @@ export function EnvironmentList({
               )}
               {!staged && !isLoading && (
                 <span className="text-xs text-muted-foreground">
-                  {restricted
-                    ? "restricted"
-                    : hasValues
-                      ? "configured"
-                      : "not configured"}
+                  {environmentStatusLabel({ restricted, hasValues })}
                 </span>
               )}
             </div>

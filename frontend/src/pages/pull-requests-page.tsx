@@ -9,8 +9,8 @@ import type { PullRequest } from "@/api/types"
 
 // Drafts are private to the author's workspace (see the Workspace page) and are
 // not shown in the review list — only submitted PRs appear here.
-const OPEN_STATUSES = ["open", "approved"]
-const CLOSED_STATUSES = ["merged", "closed"]
+const OPEN_STATUSES = new Set<PullRequest["status"]>(["open", "approved"])
+const CLOSED_STATUSES = new Set<PullRequest["status"]>(["merged", "closed"])
 
 function statusVariant(status: PullRequest["status"]) {
   switch (status) {
@@ -35,8 +35,8 @@ export default function PullRequestsPage() {
   const allItems = data?.items ?? []
   const filtered = allItems.filter((pr) =>
     tab === "open"
-      ? OPEN_STATUSES.includes(pr.status)
-      : CLOSED_STATUSES.includes(pr.status),
+      ? OPEN_STATUSES.has(pr.status)
+      : CLOSED_STATUSES.has(pr.status),
   )
 
   return (

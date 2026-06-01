@@ -15,6 +15,12 @@ interface DiffLine {
   newLineNo?: number
 }
 
+function lineMarker(type: DiffLine["type"]): string {
+  if (type === "added") return "+"
+  if (type === "removed") return "-"
+  return " "
+}
+
 export function DiffViewer({ oldText, newText, className }: Readonly<DiffViewerProps>) {
   const { lines, additions, deletions } = useMemo(() => {
     const parts = diffLines(oldText, newText)
@@ -65,7 +71,7 @@ export function DiffViewer({ oldText, newText, className }: Readonly<DiffViewerP
       <pre className="overflow-x-auto p-0 m-0">
         {lines.map((line, i) => (
           <div
-            key={i}
+            key={`${i}:${line.type}:${line.oldLineNo ?? ""}:${line.newLineNo ?? ""}`}
             className={cn(
               "flex leading-5 whitespace-pre",
               line.type === "added" && "bg-green-500/15",
@@ -85,7 +91,7 @@ export function DiffViewer({ oldText, newText, className }: Readonly<DiffViewerP
                 line.type === "removed" && "text-red-400",
               )}
             >
-              {line.type === "added" ? "+" : line.type === "removed" ? "-" : " "}
+              {lineMarker(line.type)}
             </span>
             <span
               className={cn(
@@ -116,7 +122,7 @@ export function TextViewer({ text, className }: Readonly<TextViewerProps>) {
     <div className={cn("text-sm font-mono", className)}>
       <pre className="overflow-x-auto p-0 m-0">
         {lines.map((line, i) => (
-          <div key={i} className="flex leading-5 whitespace-pre">
+          <div key={`${i}:${line}`} className="flex leading-5 whitespace-pre">
             <span className="inline-block w-10 shrink-0 text-right pr-1 text-muted-foreground/50 select-none border-r border-border/50">
               {i + 1}
             </span>

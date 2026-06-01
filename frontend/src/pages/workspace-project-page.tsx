@@ -166,9 +166,10 @@ export default function WorkspaceProjectPage() {
             Resolve {problems.length} problem{problems.length !== 1 ? "s" : ""} before submitting
           </h3>
           <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-            {problems.map((p, i) => (
-              <li key={i}>{problemText(p)}</li>
-            ))}
+            {problems.map((p) => {
+              const text = problemText(p)
+              return <li key={text}>{text}</li>
+            })}
           </ul>
         </div>
       )}
