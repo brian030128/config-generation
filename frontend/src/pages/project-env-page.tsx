@@ -5,7 +5,7 @@ import { EnvAdminList } from "@/components/environments/env-admin-list"
 import { Separator } from "@/components/ui/separator"
 
 export default function ProjectEnvPage() {
-  const { name: projectName, env: envName } = useParams<{
+  const { name: projectName = "", env: envName = "" } = useParams<{
     name: string
     env: string
   }>()
@@ -14,7 +14,7 @@ export default function ProjectEnvPage() {
     data: values,
     isLoading: valuesLoading,
     error: valuesError,
-  } = useValues(projectName!, envName!)
+  } = useValues(projectName, envName)
 
   return (
     <div className="space-y-6">
@@ -38,14 +38,14 @@ export default function ProjectEnvPage() {
       )}
 
       <ValuesEditor
-        projectName={projectName!}
-        envName={envName!}
+        projectName={projectName}
+        envName={envName}
         values={valuesError ? null : (values ?? null)}
       />
 
       <Separator />
 
-      <EnvAdminList projectName={projectName!} envName={envName!} />
+      <EnvAdminList projectName={projectName} envName={envName} />
     </div>
   )
 }

@@ -35,10 +35,10 @@ function problemText(p: WorkspaceProblem): string {
 }
 
 export default function WorkspaceProjectPage() {
-  const { name } = useParams<{ name: string }>()
+  const { name = "" } = useParams<{ name: string }>()
   const navigate = useNavigate()
-  const { data: project, isLoading: projectLoading } = useProject(name!)
-  const { data: draft, isLoading: draftLoading } = useActiveDraft(name!)
+  const { data: project, isLoading: projectLoading } = useProject(name)
+  const { data: draft, isLoading: draftLoading } = useActiveDraft(name)
   const submitDraft = useSubmitDraft()
 
   const [submitOpen, setSubmitOpen] = useState(false)
@@ -48,7 +48,7 @@ export default function WorkspaceProjectPage() {
   const changeCount = draft?.changes?.length ?? 0
   const isDraftWithChanges = draft?.status === "draft" && changeCount > 0
 
-  const { data: validation } = useValidateWorkspace(name!, isDraftWithChanges)
+  const { data: validation } = useValidateWorkspace(name, isDraftWithChanges)
   const problems = validation?.problems ?? []
   const isInvalid = !!validation && !validation.valid
 
@@ -182,7 +182,7 @@ export default function WorkspaceProjectPage() {
 
         <TabsContent value="templates" className="mt-4">
           <TemplateList
-            projectName={name!}
+            projectName={name}
             workspaceMode
             modifiedTemplates={modifiedTemplates}
           />
@@ -190,7 +190,7 @@ export default function WorkspaceProjectPage() {
 
         <TabsContent value="environments" className="mt-4">
           <EnvironmentList
-            projectName={name!}
+            projectName={name}
             workspaceMode
           />
         </TabsContent>

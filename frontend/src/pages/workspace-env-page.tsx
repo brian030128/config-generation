@@ -17,17 +17,17 @@ import {
 } from "@/components/values/reference-selector"
 
 export default function WorkspaceEnvPage() {
-  const { name: projectName, env: envName } = useParams<{
+  const { name: projectName = "", env: envName = "" } = useParams<{
     name: string
     env: string
   }>()
   const navigate = useNavigate()
-  const { data: draft } = useActiveDraft(projectName!)
-  const stageValues = useStageValues(projectName!)
+  const { data: draft } = useActiveDraft(projectName)
+  const stageValues = useStageValues(projectName)
 
-  const { data: values } = useValues(projectName!, envName!)
+  const { data: values } = useValues(projectName, envName)
 
-  const { data: varsData, isLoading: varsLoading } = useProjectVariables(projectName!)
+  const { data: varsData, isLoading: varsLoading } = useProjectVariables(projectName)
 
   // Merge DB variables with variables from staged templates in the draft
   const variables = useMemo(() => {
@@ -111,7 +111,7 @@ export default function WorkspaceEnvPage() {
   function handleSave() {
     stageValues.mutate(
       {
-        envName: envName!,
+        envName: envName,
         payload,
       },
       {

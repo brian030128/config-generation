@@ -13,8 +13,8 @@ import { formatRelativeTime } from "@/lib/utils"
 import type { GlobalValues } from "@/api/types"
 
 export default function GlobalValuesDetailPage() {
-  const { name } = useParams<{ name: string }>()
-  const { data: latest, isLoading, error } = useGlobalValue(name!)
+  const { name = "" } = useParams<{ name: string }>()
+  const { data: latest, isLoading, error } = useGlobalValue(name)
   const [viewingVersion, setViewingVersion] = useState<GlobalValues | null>(
     null,
   )
@@ -27,7 +27,7 @@ export default function GlobalValuesDetailPage() {
       return
     }
     try {
-      const ver = await globalValuesApi.getVersion(name!, versionId)
+      const ver = await globalValuesApi.getVersion(name, versionId)
       setViewingVersion(ver)
     } catch {
       // ignore
@@ -73,14 +73,14 @@ export default function GlobalValuesDetailPage() {
 
       <div className="flex gap-6">
         <div className="flex-1">
-          <KvEditor name={name!} data={displayData} readOnly={isReadOnly} />
+          <KvEditor name={name} data={displayData} readOnly={isReadOnly} />
         </div>
 
         <Separator orientation="vertical" className="h-auto" />
 
         <div className="w-64 shrink-0">
           <GvVersionHistory
-            name={name!}
+            name={name}
             selectedVersion={displayData.version_id}
             onSelectVersion={handleSelectVersion}
           />
@@ -99,7 +99,7 @@ export default function GlobalValuesDetailPage() {
           <Separator />
           <ApprovalPolicyCard
             kind="global-values"
-            name={name!}
+            name={name}
             currentCondition={latest.approval_condition}
           />
           <p className="text-sm text-muted-foreground">

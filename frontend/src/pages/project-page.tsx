@@ -11,9 +11,9 @@ import { ArrowUpRight } from "lucide-react"
 type ProjectTab = "templates" | "environments" | "members" | "approval"
 
 export default function ProjectPage({ tab = "templates" }: Readonly<{ tab?: ProjectTab }>) {
-  const { name } = useParams<{ name: string }>()
-  const { data: project, isLoading, error } = useProject(name!)
-  const membersQuery = useProjectMembers(name!)
+  const { name = "" } = useParams<{ name: string }>()
+  const { data: project, isLoading, error } = useProject(name)
+  const membersQuery = useProjectMembers(name)
   const canManage = membersQuery.data?.viewer_can_manage ?? false
   const navigate = useNavigate()
 
@@ -62,15 +62,15 @@ export default function ProjectPage({ tab = "templates" }: Readonly<{ tab?: Proj
         </TabsList>
 
         <TabsContent value="templates" className="mt-4">
-          <TemplateList projectName={name!} />
+          <TemplateList projectName={name} />
         </TabsContent>
 
         <TabsContent value="environments" className="mt-4">
-          <EnvironmentList projectName={name!} />
+          <EnvironmentList projectName={name} />
         </TabsContent>
 
         <TabsContent value="members" className="mt-4">
-          <MemberList projectName={name!} />
+          <MemberList projectName={name} />
         </TabsContent>
 
         {canManage && (

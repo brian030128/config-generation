@@ -38,6 +38,14 @@ export function formatRelativeTime(dateString: string): string {
 // objects. Objects/arrays are serialized as JSON.
 export function safeString(v: unknown): string {
   if (v == null) return ""
+  if (typeof v === "string") return v
+  if (
+    typeof v === "number" ||
+    typeof v === "boolean" ||
+    typeof v === "bigint"
+  ) {
+    return String(v)
+  }
   if (typeof v === "object") {
     try {
       return JSON.stringify(v)
@@ -45,5 +53,6 @@ export function safeString(v: unknown): string {
       return ""
     }
   }
-  return String(v)
+  // functions / symbols — not expected in our JSON payloads
+  return ""
 }
