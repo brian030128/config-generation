@@ -20,7 +20,7 @@ const REQ_RE = /(\d+)\s*x\s*(\S+)/g
 export function parseApprovalCondition(condition: string): ApprovalRequirement[] {
   const reqs: ApprovalRequirement[] = []
   for (const m of condition.matchAll(REQ_RE)) {
-    reqs.push({ count: parseInt(m[1], 10), role: m[2] })
+    reqs.push({ count: Number.parseInt(m[1], 10), role: m[2] })
   }
   return reqs
 }

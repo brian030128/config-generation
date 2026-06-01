@@ -145,9 +145,7 @@ export default function WorkspaceProjectPage() {
                 <span className="font-mono text-xs">
                   {c.object_type === "template"
                     ? c.template_name
-                    : c.object_type === "environment"
-                      ? c.environment_name
-                      : c.environment_name}
+                    : c.environment_name}
                 </span>
                 {c.object_type !== "environment" && (
                   <span className="text-muted-foreground text-xs">

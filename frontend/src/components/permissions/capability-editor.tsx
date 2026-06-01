@@ -7,7 +7,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Label } from "@/components/ui/label"
 import {
   Select,
   SelectContent,
@@ -109,7 +108,9 @@ export function CapabilityEditor({
                   }
                 />
                 <span className="space-y-0.5">
-                  <Label className="cursor-pointer">{cap.label}</Label>
+                  <span className="text-sm font-medium leading-none cursor-pointer">
+                    {cap.label}
+                  </span>
                   <span className="block text-xs text-muted-foreground">
                     {cap.description}
                   </span>
