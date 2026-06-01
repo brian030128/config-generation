@@ -553,12 +553,15 @@ func (h *AuthHandler) setSessionCookies(w http.ResponseWriter, token string) {
 
 func (h *AuthHandler) setCookie(w http.ResponseWriter, name, value string, httpOnly bool, maxAge time.Duration) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     name,
-		Value:    value,
-		Path:     "/",
-		MaxAge:   int(maxAge.Seconds()),
-		Expires:  time.Now().Add(maxAge),
-		HttpOnly: httpOnly,
+		Name:    name,
+		Value:   value,
+		Path:    "/",
+		MaxAge:  int(maxAge.Seconds()),
+		Expires: time.Now().Add(maxAge),
+		// HttpOnly is true for the session token but intentionally false for the
+		// CSRF cookie, which the frontend reads to populate the X-CSRF-Token
+		// header (double-submit pattern). Callers control this per cookie.
+		HttpOnly: httpOnly, // NOSONAR – see comment above
 		// Secure is driven by SESSION_COOKIE_SECURE env var: true in production
 		// (HTTPS), false only for local docker-compose / Kind dev over plain HTTP.
 		Secure:   h.Config.SessionCookieSecure, // NOSONAR – configurable per environment
@@ -568,12 +571,14 @@ func (h *AuthHandler) setCookie(w http.ResponseWriter, name, value string, httpO
 
 func (h *AuthHandler) clearCookie(w http.ResponseWriter, name string, httpOnly bool) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     name,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		Expires:  time.Unix(0, 0),
-		HttpOnly: httpOnly,
+		Name:    name,
+		Value:   "",
+		Path:    "/",
+		MaxAge:  -1,
+		Expires: time.Unix(0, 0),
+		// Mirror setCookie: HttpOnly is parameterised because the CSRF cookie
+		// must remain JS-readable for the double-submit pattern.
+		HttpOnly: httpOnly, // NOSONAR – see setCookie
 		// Must mirror setCookie so browsers actually clear the cookie in production HTTPS.
 		Secure:   h.Config.SessionCookieSecure, // NOSONAR – configurable per environment
 		SameSite: h.Config.SessionSameSite,

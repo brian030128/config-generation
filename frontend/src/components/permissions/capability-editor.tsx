@@ -100,6 +100,7 @@ export function CapabilityEditor({
               >
                 <input
                   type="checkbox"
+                  aria-label={cap.label}
                   className="mt-1 h-4 w-4"
                   checked={checked}
                   disabled={rowDisabled}

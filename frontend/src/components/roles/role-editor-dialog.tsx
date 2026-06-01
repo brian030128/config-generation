@@ -72,6 +72,7 @@ function CheckboxRow({
     >
       <input
         type="checkbox"
+        aria-label={label}
         className="mt-1 h-4 w-4"
         checked={checked}
         disabled={disabled}
