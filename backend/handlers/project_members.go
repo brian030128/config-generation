@@ -23,11 +23,11 @@ func (h *ProjectMemberHandler) resolveProjectID(w http.ResponseWriter, r *http.R
 	var id int64
 	err := h.DB.QueryRowContext(r.Context(), `SELECT id FROM projects WHERE name = $1`, name).Scan(&id)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		writeError(w, http.StatusNotFound, msgProjectNotFound, "not_found")
 		return 0, false
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return 0, false
 	}
 	return id, true
@@ -49,7 +49,7 @@ func (h *ProjectMemberHandler) ListMembers(w http.ResponseWriter, r *http.Reques
 		ORDER BY pm.added_at
 	`, projectID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer rows.Close()
@@ -58,13 +58,13 @@ func (h *ProjectMemberHandler) ListMembers(w http.ResponseWriter, r *http.Reques
 	for rows.Next() {
 		var m models.ProjectMember
 		if err := rows.Scan(&m.UserID, &m.Username, &m.DisplayName, &m.AddedBy, &m.AddedAt); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 		members = append(members, m)
 	}
 	if err := rows.Err(); err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -96,7 +96,7 @@ func (h *ProjectMemberHandler) AddMember(w http.ResponseWriter, r *http.Request)
 
 	var req models.AddProjectMemberRequest
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body", "bad_request")
+		writeError(w, http.StatusBadRequest, msgInvalidRequestBody, "bad_request")
 		return
 	}
 	if req.UserID == 0 {
@@ -109,7 +109,7 @@ func (h *ProjectMemberHandler) AddMember(w http.ResponseWriter, r *http.Request)
 	var exists bool
 	if err := h.DB.QueryRowContext(r.Context(),
 		`SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)`, req.UserID).Scan(&exists); err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	if !exists {
@@ -164,7 +164,7 @@ func (h *ProjectMemberHandler) RemoveMember(w http.ResponseWriter, r *http.Reque
 		`SELECT id FROM roles WHERE name = $1 AND is_auto_created = true LIMIT 1`,
 		projectName+"_project_admin").Scan(&adminRoleID)
 	if err != nil && err != sql.ErrNoRows {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	if err == nil {
@@ -175,7 +175,7 @@ func (h *ProjectMemberHandler) RemoveMember(w http.ResponseWriter, r *http.Reque
 				EXISTS(SELECT 1 FROM user_roles WHERE role_id = $1 AND user_id = $2),
 				(SELECT COUNT(*) FROM user_roles WHERE role_id = $1)
 		`, adminRoleID, targetUserID).Scan(&isAdmin, &adminCount); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 		if isAdmin && adminCount <= 1 {
@@ -186,7 +186,7 @@ func (h *ProjectMemberHandler) RemoveMember(w http.ResponseWriter, r *http.Reque
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer tx.Rollback()
@@ -202,7 +202,7 @@ func (h *ProjectMemberHandler) RemoveMember(w http.ResponseWriter, r *http.Reque
 		`DELETE FROM roles WHERE name = $1`,
 	} {
 		if _, err = tx.ExecContext(r.Context(), q, managedRole); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 	}
@@ -211,7 +211,7 @@ func (h *ProjectMemberHandler) RemoveMember(w http.ResponseWriter, r *http.Reque
 		`DELETE FROM project_members WHERE project_id = $1 AND user_id = $2`,
 		projectID, targetUserID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	rows, _ := result.RowsAffected()
@@ -221,7 +221,7 @@ func (h *ProjectMemberHandler) RemoveMember(w http.ResponseWriter, r *http.Reque
 	}
 
 	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to commit", "internal")
+		writeError(w, http.StatusInternalServerError, msgFailedToCommit, "internal")
 		return
 	}
 

@@ -9,6 +9,16 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+// Route path literals — extracted to satisfy go:S1192.
+const (
+	pathTemplates      = "/templates"
+	pathVersions       = "/versions"
+	pathVersionID      = "/{versionID}"
+	pathEnvironments   = "/environments"
+	pathTemplateByName = "/templates/{templateName}"
+	pathEnvValues      = "/envs/{envName}/values"
+)
+
 func NewRouter(db *sql.DB, jwtSecret []byte) chi.Router {
 	return NewRouterWithAuthConfig(db, DefaultAuthConfig(jwtSecret))
 }
@@ -105,7 +115,7 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 					})
 
 					// --- Templates ---
-					r.Route("/templates", func(r chi.Router) {
+					r.Route(pathTemplates, func(r chi.Router) {
 						r.With(perm(db, "read", "project_templates", param("projectName"), nil, nil)).
 							Get("/", tmpl.ListForProject)
 						// Authoring (create/edit/delete) goes through the workspace, not here.
@@ -116,11 +126,11 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 							r.With(perm(db, "read", "project_templates", param("projectName"), nil, nil)).
 								Get("/variables", tmpl.Variables)
 
-							r.Route("/versions", func(r chi.Router) {
+							r.Route(pathVersions, func(r chi.Router) {
 								r.With(perm(db, "read", "project_templates", param("projectName"), nil, nil)).
 									Get("/", tmpl.ListVersions)
 								r.With(perm(db, "read", "project_templates", param("projectName"), nil, nil)).
-									Get("/{versionID}", tmpl.GetVersion)
+									Get(pathVersionID, tmpl.GetVersion)
 							})
 						})
 					})
@@ -135,9 +145,9 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 							r.With(perm(db, "read", "project_values", param("projectName"), param("envName"), nil)).
 								Get("/", vals.GetLatest)
 
-							r.Route("/versions", func(r chi.Router) {
+							r.Route(pathVersions, func(r chi.Router) {
 								r.With(perm(db, "read", "project_values", param("projectName"), param("envName"), nil)).
-									Get("/{versionID}", vals.GetVersion)
+									Get(pathVersionID, vals.GetVersion)
 							})
 						})
 
@@ -150,7 +160,7 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 					})
 
 					// --- Environments (project-scoped) ---
-					r.Route("/environments", func(r chi.Router) {
+					r.Route(pathEnvironments, func(r chi.Router) {
 						r.Get("/", env.List)
 						r.Get("/{envName}", env.Get)
 
@@ -183,13 +193,13 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 					r.With(perm(db, "read", "global_values", nil, nil, param("name"))).
 						Get("/", gv.GetLatest)
 
-					r.Route("/versions", func(r chi.Router) {
+					r.Route(pathVersions, func(r chi.Router) {
 						r.With(perm(db, "read", "global_values", nil, nil, param("name"))).
 							Get("/", gv.ListVersions)
 						r.With(perm(db, "write", "global_values", nil, nil, param("name"))).
 							Post("/", gv.AppendVersion)
 						r.With(perm(db, "read", "global_values", nil, nil, param("name"))).
-							Get("/{versionID}", gv.GetVersion)
+							Get(pathVersionID, gv.GetVersion)
 					})
 
 					// --- Approval condition (global values scoped) ---
@@ -222,11 +232,11 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 
 				// Templates
 				r.With(perm(db, "write", "project_templates", param("projectName"), nil, nil)).
-					Post("/templates", pr.StageTemplateCreate)
+					Post(pathTemplates, pr.StageTemplateCreate)
 				r.With(perm(db, "write", "project_templates", param("projectName"), nil, nil)).
-					Put("/templates/{templateName}", pr.StageTemplateUpdate)
+					Put(pathTemplateByName, pr.StageTemplateUpdate)
 				r.With(perm(db, "delete", "project_templates", param("projectName"), nil, nil)).
-					Delete("/templates/{templateName}", pr.StageTemplateDelete)
+					Delete(pathTemplateByName, pr.StageTemplateDelete)
 
 				// Environments. Creating a *new* environment requires a wildcard
 				// create:env_values(p, *) — only project admins, not env-admins
@@ -234,26 +244,26 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 				// env X needs delete:project_values(p, X) — the admin's wildcard
 				// matches, and an env-admin's env-scoped delete matches their env.
 				r.With(perm(db, "create", "env_values", param("projectName"), middleware.Static("*"), nil)).
-					Post("/environments", pr.StageEnvironmentCreate)
+					Post(pathEnvironments, pr.StageEnvironmentCreate)
 				r.With(perm(db, "delete", "project_values", param("projectName"), param("envName"), nil)).
 					Delete("/environments/{envName}", pr.StageEnvironmentDelete)
 
 				// Values (upsert gated by write; creating a brand-new set additionally
 				// needs create:env_values, enforced in-handler)
 				r.With(perm(db, "write", "project_values", param("projectName"), param("envName"), nil)).
-					Put("/envs/{envName}/values", pr.StageValuesUpsert)
+					Put(pathEnvValues, pr.StageValuesUpsert)
 				r.With(perm(db, "delete", "project_values", param("projectName"), param("envName"), nil)).
-					Delete("/envs/{envName}/values", pr.StageValuesDelete)
+					Delete(pathEnvValues, pr.StageValuesDelete)
 
 				// Overlay reads (base + caller's staged changes)
 				r.With(perm(db, "read", "project_templates", param("projectName"), nil, nil)).
-					Get("/templates", pr.OverlayTemplates)
+					Get(pathTemplates, pr.OverlayTemplates)
 				r.With(perm(db, "read", "project_templates", param("projectName"), nil, nil)).
-					Get("/templates/{templateName}", pr.OverlayTemplate)
+					Get(pathTemplateByName, pr.OverlayTemplate)
 				r.With(perm(db, "read", "project_templates", param("projectName"), nil, nil)).
-					Get("/environments", pr.OverlayEnvironments)
+					Get(pathEnvironments, pr.OverlayEnvironments)
 				r.With(perm(db, "read", "project_values", param("projectName"), param("envName"), nil)).
-					Get("/envs/{envName}/values", pr.OverlayValues)
+					Get(pathEnvValues, pr.OverlayValues)
 
 				// Pre-submit validation (renders the overlay against every environment)
 				r.With(perm(db, "read", "project_templates", param("projectName"), nil, nil)).

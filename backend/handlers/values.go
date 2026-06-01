@@ -24,11 +24,11 @@ func resolveEnvironmentID(r *http.Request, db *sql.DB, projectID int64, envName 
 func (h *ValuesHandler) GetLatest(w http.ResponseWriter, r *http.Request) {
 	projectID, err := resolveProjectID(r, h.DB)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		writeError(w, http.StatusNotFound, msgProjectNotFound, "not_found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -40,7 +40,7 @@ func (h *ValuesHandler) GetLatest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -59,7 +59,7 @@ func (h *ValuesHandler) GetLatest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -70,11 +70,11 @@ func (h *ValuesHandler) GetLatest(w http.ResponseWriter, r *http.Request) {
 func (h *ValuesHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
 	projectID, err := resolveProjectID(r, h.DB)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		writeError(w, http.StatusNotFound, msgProjectNotFound, "not_found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -86,7 +86,7 @@ func (h *ValuesHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -110,7 +110,7 @@ func (h *ValuesHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 

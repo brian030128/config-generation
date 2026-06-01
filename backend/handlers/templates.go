@@ -29,11 +29,11 @@ func resolveProjectID(r *http.Request, db *sql.DB) (int64, error) {
 func (h *TemplateHandler) GetLatest(w http.ResponseWriter, r *http.Request) {
 	projectID, err := resolveProjectID(r, h.DB)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		writeError(w, http.StatusNotFound, msgProjectNotFound, "not_found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -54,7 +54,7 @@ func (h *TemplateHandler) GetLatest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -65,11 +65,11 @@ func (h *TemplateHandler) GetLatest(w http.ResponseWriter, r *http.Request) {
 func (h *TemplateHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
 	projectID, err := resolveProjectID(r, h.DB)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		writeError(w, http.StatusNotFound, msgProjectNotFound, "not_found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -94,7 +94,7 @@ func (h *TemplateHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -105,11 +105,11 @@ func (h *TemplateHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
 func (h *TemplateHandler) ListForProject(w http.ResponseWriter, r *http.Request) {
 	projectID, err := resolveProjectID(r, h.DB)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		writeError(w, http.StatusNotFound, msgProjectNotFound, "not_found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -121,7 +121,7 @@ func (h *TemplateHandler) ListForProject(w http.ResponseWriter, r *http.Request)
 		ORDER BY template_name, version_id DESC
 	`, projectID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer rows.Close()
@@ -130,13 +130,13 @@ func (h *TemplateHandler) ListForProject(w http.ResponseWriter, r *http.Request)
 	for rows.Next() {
 		var t models.ProjectConfigTemplate
 		if err := rows.Scan(&t.ID, &t.ProjectID, &t.TemplateName, &t.VersionID, &t.Body, &t.CommitMessage, &t.CreatedBy, &t.CreatedAt); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 		templates = append(templates, t)
 	}
 	if err := rows.Err(); err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -150,11 +150,11 @@ func (h *TemplateHandler) ListForProject(w http.ResponseWriter, r *http.Request)
 func (h *TemplateHandler) ListVersions(w http.ResponseWriter, r *http.Request) {
 	projectID, err := resolveProjectID(r, h.DB)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		writeError(w, http.StatusNotFound, msgProjectNotFound, "not_found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -167,7 +167,7 @@ func (h *TemplateHandler) ListVersions(w http.ResponseWriter, r *http.Request) {
 		ORDER BY version_id DESC
 	`, projectID, templateName)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer rows.Close()
@@ -176,13 +176,13 @@ func (h *TemplateHandler) ListVersions(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var t models.ProjectConfigTemplate
 		if err := rows.Scan(&t.ID, &t.ProjectID, &t.TemplateName, &t.VersionID, &t.Body, &t.CommitMessage, &t.CreatedBy, &t.CreatedAt); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 		versions = append(versions, t)
 	}
 	if err := rows.Err(); err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -196,11 +196,11 @@ func (h *TemplateHandler) ListVersions(w http.ResponseWriter, r *http.Request) {
 func (h *TemplateHandler) Variables(w http.ResponseWriter, r *http.Request) {
 	projectID, err := resolveProjectID(r, h.DB)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		writeError(w, http.StatusNotFound, msgProjectNotFound, "not_found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -217,7 +217,7 @@ func (h *TemplateHandler) Variables(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -234,11 +234,11 @@ func (h *TemplateHandler) Variables(w http.ResponseWriter, r *http.Request) {
 func (h *TemplateHandler) ProjectVariables(w http.ResponseWriter, r *http.Request) {
 	projectID, err := resolveProjectID(r, h.DB)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		writeError(w, http.StatusNotFound, msgProjectNotFound, "not_found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -250,7 +250,7 @@ func (h *TemplateHandler) ProjectVariables(w http.ResponseWriter, r *http.Reques
 		ORDER BY template_name, version_id DESC
 	`, projectID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer rows.Close()
@@ -261,7 +261,7 @@ func (h *TemplateHandler) ProjectVariables(w http.ResponseWriter, r *http.Reques
 	for rows.Next() {
 		var body string
 		if err := rows.Scan(&body); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 		vars, err := extractTemplateVariables(body)
@@ -277,7 +277,7 @@ func (h *TemplateHandler) ProjectVariables(w http.ResponseWriter, r *http.Reques
 		}
 	}
 	if err := rows.Err(); err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 

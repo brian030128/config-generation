@@ -44,7 +44,7 @@ func (h *RoleHandler) loadRole(w http.ResponseWriter, r *http.Request) (*models.
 		return nil, false
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return nil, false
 	}
 	return &role, true
@@ -58,7 +58,7 @@ func (h *RoleHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	var req models.CreateRoleRequest
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body", "bad_request")
+		writeError(w, http.StatusBadRequest, msgInvalidRequestBody, "bad_request")
 		return
 	}
 	if req.Name == "" {
@@ -68,7 +68,7 @@ func (h *RoleHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer tx.Rollback()
@@ -93,7 +93,7 @@ func (h *RoleHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to commit", "internal")
+		writeError(w, http.StatusInternalServerError, msgFailedToCommit, "internal")
 		return
 	}
 
@@ -116,13 +116,13 @@ func (h *RoleHandler) EditPermissions(w http.ResponseWriter, r *http.Request) {
 
 	var req models.EditRolePermissionsRequest
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body", "bad_request")
+		writeError(w, http.StatusBadRequest, msgInvalidRequestBody, "bad_request")
 		return
 	}
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer tx.Rollback()
@@ -137,7 +137,7 @@ func (h *RoleHandler) EditPermissions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to commit", "internal")
+		writeError(w, http.StatusInternalServerError, msgFailedToCommit, "internal")
 		return
 	}
 
@@ -160,7 +160,7 @@ func (h *RoleHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer tx.Rollback()
@@ -177,7 +177,7 @@ func (h *RoleHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to commit", "internal")
+		writeError(w, http.StatusInternalServerError, msgFailedToCommit, "internal")
 		return
 	}
 
@@ -196,7 +196,7 @@ func (h *RoleHandler) AssignUser(w http.ResponseWriter, r *http.Request) {
 
 	var req models.AssignUserRoleRequest
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body", "bad_request")
+		writeError(w, http.StatusBadRequest, msgInvalidRequestBody, "bad_request")
 		return
 	}
 	if req.UserID == 0 {
@@ -244,7 +244,7 @@ func (h *RoleHandler) RemoveUser(w http.ResponseWriter, r *http.Request) {
 		if err := h.DB.QueryRowContext(r.Context(), `
 			SELECT COUNT(*) FROM user_roles WHERE role_id = $1
 		`, role.ID).Scan(&memberCount); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 		if memberCount <= 1 {
@@ -257,7 +257,7 @@ func (h *RoleHandler) RemoveUser(w http.ResponseWriter, r *http.Request) {
 		DELETE FROM user_roles WHERE user_id = $1 AND role_id = $2
 	`, targetUserID, role.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	rows, _ := result.RowsAffected()
@@ -281,16 +281,16 @@ func (h *RoleHandler) List(w http.ResponseWriter, r *http.Request) {
 		ORDER BY name
 	`, managedMemberRolePrefix)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	roles, err := scanRoles(roleRows)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	if err := h.loadRolePermsAndMembers(r.Context(), roles); err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 

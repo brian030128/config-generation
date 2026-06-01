@@ -88,17 +88,17 @@ func (h *PullRequestHandler) stage(w http.ResponseWriter, r *http.Request, sc st
 
 	projectID, err := h.resolveProjectIDByName(r.Context(), projectName)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		writeError(w, http.StatusNotFound, msgProjectNotFound, "not_found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer tx.Rollback()
@@ -113,13 +113,13 @@ func (h *PullRequestHandler) stage(w http.ResponseWriter, r *http.Request, sc st
 		if _, err = tx.ExecContext(r.Context(), `
 			UPDATE pr_approvals SET withdrawn_at = NOW() WHERE pr_id = $1 AND withdrawn_at IS NULL
 		`, pr.ID); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 		if _, err = tx.ExecContext(r.Context(), `
 			UPDATE pull_requests SET status = 'open', updated_at = NOW() WHERE id = $1
 		`, pr.ID); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 		pr.Status = "open"
@@ -136,7 +136,7 @@ func (h *PullRequestHandler) stage(w http.ResponseWriter, r *http.Request, sc st
 				 ORDER BY version_id DESC LIMIT 1),
 			0)
 		`, projectID, sc.templateName).Scan(&baseVersionID); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 	case "values":
@@ -170,7 +170,7 @@ func (h *PullRequestHandler) stage(w http.ResponseWriter, r *http.Request, sc st
 			pr.ID, sc.envName)
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -183,12 +183,12 @@ func (h *PullRequestHandler) stage(w http.ResponseWriter, r *http.Request, sc st
 	}
 
 	if _, err = tx.ExecContext(r.Context(), `UPDATE pull_requests SET updated_at = NOW() WHERE id = $1`, pr.ID); err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
 	if err = tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to commit", "internal")
+		writeError(w, http.StatusInternalServerError, msgFailedToCommit, "internal")
 		return
 	}
 
@@ -201,7 +201,7 @@ func (h *PullRequestHandler) stage(w http.ResponseWriter, r *http.Request, sc st
 func (h *PullRequestHandler) StageTemplateCreate(w http.ResponseWriter, r *http.Request) {
 	var req models.CreateTemplateRequest
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body", "bad_request")
+		writeError(w, http.StatusBadRequest, msgInvalidRequestBody, "bad_request")
 		return
 	}
 	if req.TemplateName == "" || req.Body == "" {
@@ -216,7 +216,7 @@ func (h *PullRequestHandler) StageTemplateUpdate(w http.ResponseWriter, r *http.
 	name := chi.URLParam(r, "templateName")
 	var req models.AppendTemplateVersionRequest
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body", "bad_request")
+		writeError(w, http.StatusBadRequest, msgInvalidRequestBody, "bad_request")
 		return
 	}
 	if req.Body == "" {
@@ -236,7 +236,7 @@ func (h *PullRequestHandler) StageTemplateDelete(w http.ResponseWriter, r *http.
 func (h *PullRequestHandler) StageEnvironmentCreate(w http.ResponseWriter, r *http.Request) {
 	var req models.CreateEnvironmentRequest
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body", "bad_request")
+		writeError(w, http.StatusBadRequest, msgInvalidRequestBody, "bad_request")
 		return
 	}
 	if req.Name == "" {
@@ -262,7 +262,7 @@ func (h *PullRequestHandler) StageValuesUpsert(w http.ResponseWriter, r *http.Re
 
 	var req models.AppendProjectConfigValuesVersionRequest
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body", "bad_request")
+		writeError(w, http.StatusBadRequest, msgInvalidRequestBody, "bad_request")
 		return
 	}
 	if len(req.Payload) == 0 {
@@ -272,11 +272,11 @@ func (h *PullRequestHandler) StageValuesUpsert(w http.ResponseWriter, r *http.Re
 
 	projectID, err := h.resolveProjectIDByName(r.Context(), projectName)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		writeError(w, http.StatusNotFound, msgProjectNotFound, "not_found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -290,7 +290,7 @@ func (h *PullRequestHandler) StageValuesUpsert(w http.ResponseWriter, r *http.Re
 			WHERE v.project_id = $1 AND e.name = $2
 		)
 	`, projectID, envName).Scan(&liveExists); err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -331,17 +331,17 @@ func (h *PullRequestHandler) DiscardWorkspace(w http.ResponseWriter, r *http.Req
 
 	projectID, err := h.resolveProjectIDByName(r.Context(), projectName)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		writeError(w, http.StatusNotFound, msgProjectNotFound, "not_found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer tx.Rollback()
@@ -359,7 +359,7 @@ func (h *PullRequestHandler) DiscardWorkspace(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	if status != "draft" {
@@ -379,7 +379,7 @@ func (h *PullRequestHandler) DiscardWorkspace(w http.ResponseWriter, r *http.Req
 	}
 
 	if err = tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to commit", "internal")
+		writeError(w, http.StatusInternalServerError, msgFailedToCommit, "internal")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -392,23 +392,23 @@ func (h *PullRequestHandler) ListChanges(w http.ResponseWriter, r *http.Request)
 
 	projectID, err := h.resolveProjectIDByName(r.Context(), projectName)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		writeError(w, http.StatusNotFound, msgProjectNotFound, "not_found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
 	prID, ok, err := h.activeDraftID(r.Context(), projectID, user.UserID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	changes := []models.PRChange{}
 	if ok {
 		if changes, err = h.loadChanges(r.Context(), prID); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 	}
@@ -429,17 +429,17 @@ func (h *PullRequestHandler) UnstageChange(w http.ResponseWriter, r *http.Reques
 
 	projectID, err := h.resolveProjectIDByName(r.Context(), projectName)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		writeError(w, http.StatusNotFound, msgProjectNotFound, "not_found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer tx.Rollback()
@@ -461,13 +461,13 @@ func (h *PullRequestHandler) UnstageChange(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
 	res, err := tx.ExecContext(r.Context(), `DELETE FROM pr_changes WHERE id = $1 AND pr_id = $2`, changeID, pr.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
@@ -479,25 +479,25 @@ func (h *PullRequestHandler) UnstageChange(w http.ResponseWriter, r *http.Reques
 		if _, err = tx.ExecContext(r.Context(), `
 			UPDATE pr_approvals SET withdrawn_at = NOW() WHERE pr_id = $1 AND withdrawn_at IS NULL
 		`, pr.ID); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 		if _, err = tx.ExecContext(r.Context(), `
 			UPDATE pull_requests SET status = 'open', updated_at = NOW() WHERE id = $1
 		`, pr.ID); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 		pr.Status = "open"
 	} else {
 		if _, err = tx.ExecContext(r.Context(), `UPDATE pull_requests SET updated_at = NOW() WHERE id = $1`, pr.ID); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 	}
 
 	if err = tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to commit", "internal")
+		writeError(w, http.StatusInternalServerError, msgFailedToCommit, "internal")
 		return
 	}
 
@@ -610,17 +610,17 @@ func (h *PullRequestHandler) OverlayTemplates(w http.ResponseWriter, r *http.Req
 	projectName := chi.URLParam(r, "projectName")
 	projectID, err := h.resolveProjectIDByName(r.Context(), projectName)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		writeError(w, http.StatusNotFound, msgProjectNotFound, "not_found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
 	items, err := h.effectiveTemplates(r.Context(), projectID, user.UserID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -633,17 +633,17 @@ func (h *PullRequestHandler) OverlayTemplate(w http.ResponseWriter, r *http.Requ
 	templateName := chi.URLParam(r, "templateName")
 	projectID, err := h.resolveProjectIDByName(r.Context(), projectName)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		writeError(w, http.StatusNotFound, msgProjectNotFound, "not_found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
 	staged, err := h.stagedChangesByKey(r.Context(), projectID, user.UserID, "template")
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -655,7 +655,7 @@ func (h *PullRequestHandler) OverlayTemplate(w http.ResponseWriter, r *http.Requ
 		ORDER BY version_id DESC LIMIT 1
 	`, projectID, templateName).Scan(&liveVersion, &liveBody)
 	if liveErr != nil && liveErr != sql.ErrNoRows {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -735,17 +735,17 @@ func (h *PullRequestHandler) OverlayEnvironments(w http.ResponseWriter, r *http.
 	projectName := chi.URLParam(r, "projectName")
 	projectID, err := h.resolveProjectIDByName(r.Context(), projectName)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		writeError(w, http.StatusNotFound, msgProjectNotFound, "not_found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
 	items, err := h.effectiveEnvironments(r.Context(), projectID, user.UserID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -805,17 +805,17 @@ func (h *PullRequestHandler) OverlayValues(w http.ResponseWriter, r *http.Reques
 	envName := chi.URLParam(r, "envName")
 	projectID, err := h.resolveProjectIDByName(r.Context(), projectName)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		writeError(w, http.StatusNotFound, msgProjectNotFound, "not_found")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
 	resp, state, err := h.effectiveValues(r.Context(), projectID, user.UserID, envName)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	switch state {

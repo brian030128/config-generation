@@ -24,7 +24,7 @@ func (h *DeploymentHandler) Preview(w http.ResponseWriter, r *http.Request) {
 
 	var req models.DeployPreviewRequest
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body", "bad_request")
+		writeError(w, http.StatusBadRequest, msgInvalidRequestBody, "bad_request")
 		return
 	}
 
@@ -101,7 +101,7 @@ func (h *DeploymentHandler) Execute(w http.ResponseWriter, r *http.Request) {
 
 	var req models.DeployRequest
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body", "bad_request")
+		writeError(w, http.StatusBadRequest, msgInvalidRequestBody, "bad_request")
 		return
 	}
 
@@ -137,7 +137,7 @@ func (h *DeploymentHandler) Execute(w http.ResponseWriter, r *http.Request) {
 	// Create deployment record in a transaction
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer tx.Rollback()
@@ -221,7 +221,7 @@ func (h *DeploymentHandler) GetLatest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -232,7 +232,7 @@ func (h *DeploymentHandler) GetLatest(w http.ResponseWriter, r *http.Request) {
 		WHERE deployment_id = $1
 	`, dep.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer rows.Close()
@@ -243,7 +243,7 @@ func (h *DeploymentHandler) GetLatest(w http.ResponseWriter, r *http.Request) {
 		var name string
 		var tmplVer, valsVer int
 		if err := rows.Scan(&name, &tmplVer, &valsVer); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 		templateVersions[name] = tmplVer
@@ -258,7 +258,7 @@ func (h *DeploymentHandler) GetLatest(w http.ResponseWriter, r *http.Request) {
 		WHERE de.deployment_id = $1
 	`, dep.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer gvRows.Close()
@@ -268,7 +268,7 @@ func (h *DeploymentHandler) GetLatest(w http.ResponseWriter, r *http.Request) {
 		var name string
 		var ver int
 		if err := gvRows.Scan(&name, &ver); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 		gvVersions[name] = ver
@@ -289,11 +289,11 @@ func (h *DeploymentHandler) GetLatest(w http.ResponseWriter, r *http.Request) {
 func (h *DeploymentHandler) resolveProjectEnv(w http.ResponseWriter, r *http.Request) (int64, int64, bool) {
 	projectID, err := resolveProjectID(r, h.DB)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "project not found", "not_found")
+		writeError(w, http.StatusNotFound, msgProjectNotFound, "not_found")
 		return 0, 0, false
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return 0, 0, false
 	}
 
@@ -304,7 +304,7 @@ func (h *DeploymentHandler) resolveProjectEnv(w http.ResponseWriter, r *http.Req
 		return 0, 0, false
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return 0, 0, false
 	}
 
@@ -326,7 +326,7 @@ func (h *DeploymentHandler) fetchPinnedTemplates(w http.ResponseWriter, r *http.
 			return nil, nil, false
 		}
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return nil, nil, false
 		}
 		templates = append(templates, services.TemplateInput{Name: name, Body: body})
@@ -347,7 +347,7 @@ func (h *DeploymentHandler) fetchPinnedValues(w http.ResponseWriter, r *http.Req
 		return nil, false
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return nil, false
 	}
 	return payload, true
@@ -368,7 +368,7 @@ func (h *DeploymentHandler) fetchPinnedGlobalValues(w http.ResponseWriter, r *ht
 			return nil, nil, false
 		}
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return nil, nil, false
 		}
 

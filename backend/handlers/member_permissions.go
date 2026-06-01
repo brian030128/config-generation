@@ -95,7 +95,7 @@ func (h *ProjectMemberHandler) GetMemberPermissions(w http.ResponseWriter, r *ht
 
 	isMember, err := h.memberIsMember(r.Context(), projectID, targetUserID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	if !isMember {
@@ -110,7 +110,7 @@ func (h *ProjectMemberHandler) GetMemberPermissions(w http.ResponseWriter, r *ht
 		WHERE r.name = $1
 	`, managedMemberRoleName(projectName, targetUserID))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer rows.Close()
@@ -122,7 +122,7 @@ func (h *ProjectMemberHandler) GetMemberPermissions(w http.ResponseWriter, r *ht
 		var action, resource string
 		var keyEnv *string
 		if err := rows.Scan(&action, &resource, &keyEnv); err != nil {
-			writeError(w, http.StatusInternalServerError, "database error", "internal")
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return
 		}
 		switch resource {
@@ -151,7 +151,7 @@ func (h *ProjectMemberHandler) GetMemberPermissions(w http.ResponseWriter, r *ht
 		}
 	}
 	if err := rows.Err(); err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 
@@ -183,13 +183,13 @@ func (h *ProjectMemberHandler) SetMemberPermissions(w http.ResponseWriter, r *ht
 
 	var req models.MemberPermissions
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body", "bad_request")
+		writeError(w, http.StatusBadRequest, msgInvalidRequestBody, "bad_request")
 		return
 	}
 
 	isMember, err := h.memberIsMember(r.Context(), projectID, targetUserID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	if !isMember {
@@ -200,7 +200,7 @@ func (h *ProjectMemberHandler) SetMemberPermissions(w http.ResponseWriter, r *ht
 	// Validate and de-duplicate the per-env access (last entry per env wins).
 	envNames, err := h.projectEnvNames(r.Context(), projectID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	envAccess := map[string]models.EnvValueAccess{}
@@ -216,7 +216,7 @@ func (h *ProjectMemberHandler) SetMemberPermissions(w http.ResponseWriter, r *ht
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error", "internal")
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer tx.Rollback()
@@ -257,7 +257,7 @@ func (h *ProjectMemberHandler) SetMemberPermissions(w http.ResponseWriter, r *ht
 			continue
 		}
 		if err = insertAtom(a.action, models.ResourceProjectTemplates, ""); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to set permissions", "internal")
+			writeError(w, http.StatusInternalServerError, msgFailedToSetPerms, "internal")
 			return
 		}
 	}
@@ -267,16 +267,16 @@ func (h *ProjectMemberHandler) SetMemberPermissions(w http.ResponseWriter, r *ht
 		case access.Write:
 			// write + create (bootstrap), both env-scoped; read is implied.
 			if err = insertAtom(models.ActionWrite, models.ResourceProjectValues, env); err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to set permissions", "internal")
+				writeError(w, http.StatusInternalServerError, msgFailedToSetPerms, "internal")
 				return
 			}
 			if err = insertAtom(models.ActionCreate, models.ResourceEnvValues, env); err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to set permissions", "internal")
+				writeError(w, http.StatusInternalServerError, msgFailedToSetPerms, "internal")
 				return
 			}
 		case access.Read:
 			if err = insertAtom(models.ActionRead, models.ResourceProjectValues, env); err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to set permissions", "internal")
+				writeError(w, http.StatusInternalServerError, msgFailedToSetPerms, "internal")
 				return
 			}
 		}
@@ -292,7 +292,7 @@ func (h *ProjectMemberHandler) SetMemberPermissions(w http.ResponseWriter, r *ht
 	}
 
 	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to commit", "internal")
+		writeError(w, http.StatusInternalServerError, msgFailedToCommit, "internal")
 		return
 	}
 
