@@ -28,10 +28,10 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
 export function AddMemberDialog({
   projectName,
   existingMemberIds,
-}: {
+}: Readonly<{
   projectName: string
   existingMemberIds: number[]
-}) {
+}>) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
   const debouncedSearch = useDebouncedValue(search, 250)

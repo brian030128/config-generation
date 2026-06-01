@@ -61,14 +61,14 @@ export function CapabilityEditor({
   envLevels,
   onEnvLevelChange,
   disabled = false,
-}: {
+}: Readonly<{
   environments: { name: string }[]
   templates: TemplateCaps
   onTemplatesChange: (next: TemplateCaps) => void
   envLevels: Record<string, EnvLevel>
   onEnvLevelChange: (env: string, level: EnvLevel) => void
   disabled?: boolean
-}) {
+}>) {
   const levelFor = (env: string): EnvLevel => envLevels[env] ?? "none"
 
   return (

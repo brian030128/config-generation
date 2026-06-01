@@ -24,11 +24,11 @@ export function ApprovalPolicyCard({
   kind,
   name,
   currentCondition,
-}: {
+}: Readonly<{
   kind: "project" | "global-values"
   name: string
   currentCondition: string
-}) {
+}>) {
   const rolesQuery = useRoles()
   const knownRoleNames = (rolesQuery.data?.items ?? []).map((r) => r.name)
   const builtin =

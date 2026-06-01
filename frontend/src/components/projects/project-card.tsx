@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { MoreHorizontal, Trash2 } from "lucide-react"
 
-export function ProjectCard({ project }: { project: Project }) {
+export function ProjectCard({ project }: Readonly<{ project: Project }>) {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const navigate = useNavigate()
   const deleteProject = useDeleteProject()

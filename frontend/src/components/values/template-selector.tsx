@@ -17,7 +17,7 @@ export function TemplateSelector({
   projectName,
   value,
   onChange,
-}: TemplateSelectorProps) {
+}: Readonly<TemplateSelectorProps>) {
   const { data } = useTemplates(projectName)
   const templates = data?.items ?? []
 

@@ -25,7 +25,7 @@ interface LogoProps {
  *   <Logo variant="icon" className="h-9 w-9" />
  *   <Logo variant="wordmark" className="h-18 w-auto" />
  */
-export function Logo({ variant = "wordmark", className, alt = "ConfiGen" }: LogoProps) {
+export function Logo({ variant = "wordmark", className, alt = "ConfiGen" }: Readonly<LogoProps>) {
   const src = SOURCES[variant]
   return (
     <>

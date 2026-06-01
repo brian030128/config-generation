@@ -29,11 +29,11 @@ export function AddEnvAdminDialog({
   projectName,
   envName,
   existingAdminIds,
-}: {
+}: Readonly<{
   projectName: string
   envName: string
   existingAdminIds: number[]
-}) {
+}>) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
   const debouncedSearch = useDebouncedValue(search, 250)

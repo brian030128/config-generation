@@ -23,7 +23,7 @@ export function ValueRow({
   depth = 0,
   onChange,
   onDelete,
-}: ValueRowProps) {
+}: Readonly<ValueRowProps>) {
   const isObject = typeof value === "object" && value !== null && !Array.isArray(value)
 
   if (isObject) {
@@ -102,13 +102,13 @@ function NestedRow({
   depth,
   onChange,
   onDelete,
-}: {
+}: Readonly<{
   keyName: string
   value: Record<string, unknown>
   depth: number
   onChange: (newValue: unknown) => void
   onDelete: () => void
-}) {
+}>) {
   const [expanded, setExpanded] = useState(true)
   const entries = Object.entries(value)
 

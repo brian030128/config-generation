@@ -56,13 +56,13 @@ function CheckboxRow({
   label,
   description,
   disabled = false,
-}: {
+}: Readonly<{
   checked: boolean
   onChange: () => void
   label: string
   description: string
   disabled?: boolean
-}) {
+}>) {
   return (
     <label
       className={cn(
@@ -141,11 +141,11 @@ export function RoleEditorDialog({
   role,
   open,
   onOpenChange,
-}: {
+}: Readonly<{
   role?: Role
   open: boolean
   onOpenChange: (open: boolean) => void
-}) {
+}>) {
   const isEdit = !!role
 
   const projectsQuery = useProjects()

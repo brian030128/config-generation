@@ -16,9 +16,9 @@ import { useStageEnvironment } from "@/hooks/use-pull-requests"
 
 export function AddEnvironmentDialog({
   projectName,
-}: {
+}: Readonly<{
   projectName: string
-}) {
+}>) {
   const [open, setOpen] = useState(false)
   const [envName, setEnvName] = useState("")
   const navigate = useNavigate()

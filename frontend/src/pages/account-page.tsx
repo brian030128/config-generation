@@ -24,7 +24,7 @@ function initialsOf(name: string): string {
   if (!trimmed) return "?"
   const parts = trimmed.split(/\s+/).filter(Boolean)
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+  return (parts[0][0] + parts.at(-1)[0]).toUpperCase()
 }
 
 function formatDate(iso: string): string {
@@ -63,11 +63,11 @@ function SectionCard({
   title,
   description,
   children,
-}: {
+}: Readonly<{
   title: string
   description?: string
   children: React.ReactNode
-}) {
+}>) {
   return (
     <section className="space-y-3 rounded-lg border bg-card px-5 py-4 shadow-xs">
       <header className="space-y-1">
@@ -81,7 +81,7 @@ function SectionCard({
   )
 }
 
-function EmptyState({ children }: { children: React.ReactNode }) {
+function EmptyState({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <p className="rounded-md border border-dashed bg-muted/30 px-3 py-4 text-center text-sm text-muted-foreground">
       {children}

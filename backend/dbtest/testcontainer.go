@@ -9,7 +9,9 @@ import (
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
+	// file source — lets golang-migrate read migration files from disk.
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	// pgx stdlib driver — registers the "pgx" driver name with database/sql.
 	_ "github.com/jackc/pgx/v5/stdlib"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 )

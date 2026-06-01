@@ -49,7 +49,7 @@ function getStoredBackgroundMode(): BackgroundMode {
 }
 
 function applyBackgroundMode(mode: BackgroundMode) {
-  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches
+  const prefersDark = globalThis.matchMedia("(prefers-color-scheme: dark)").matches
   const shouldUseDark = mode === "dark" || (mode === "system" && prefersDark)
 
   document.documentElement.classList.toggle("dark", shouldUseDark)
@@ -69,7 +69,7 @@ export function SettingsPanel() {
   useEffect(() => {
     if (backgroundMode !== "system") return
 
-    const media = window.matchMedia("(prefers-color-scheme: dark)")
+    const media = globalThis.matchMedia("(prefers-color-scheme: dark)")
     const syncSystemMode = () => applyBackgroundMode("system")
 
     media.addEventListener("change", syncSystemMode)

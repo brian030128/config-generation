@@ -211,12 +211,12 @@ function MemberChip({
   member,
   canManage,
   isYou,
-}: {
+}: Readonly<{
   role: Role
   member: UserRole
   canManage: boolean
   isYou: boolean
-}) {
+}>) {
   const remove = useRemoveRoleMember()
   const name =
     member.display_name || member.username || `user ${member.user_id}`
@@ -252,7 +252,7 @@ function MemberChip({
   )
 }
 
-function DeleteRoleButton({ role }: { role: Role }) {
+function DeleteRoleButton({ role }: Readonly<{ role: Role }>) {
   const [open, setOpen] = useState(false)
   const del = useDeleteRole()
 

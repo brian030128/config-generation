@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	// pgx stdlib driver — registers the "pgx" driver name with database/sql.
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 

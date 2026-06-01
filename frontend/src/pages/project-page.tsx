@@ -10,7 +10,7 @@ import { ArrowUpRight } from "lucide-react"
 
 type ProjectTab = "templates" | "environments" | "members" | "approval"
 
-export default function ProjectPage({ tab = "templates" }: { tab?: ProjectTab }) {
+export default function ProjectPage({ tab = "templates" }: Readonly<{ tab?: ProjectTab }>) {
   const { name } = useParams<{ name: string }>()
   const { data: project, isLoading, error } = useProject(name!)
   const membersQuery = useProjectMembers(name!)
