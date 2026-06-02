@@ -49,8 +49,8 @@ func (h *ValuesHandler) resolveProjectAndEnv(w http.ResponseWriter, r *http.Requ
 // scanValues decodes a project_config_values row into vals.
 func scanValues(row *sql.Row, vals *models.ProjectConfigValues) error {
 	return row.Scan(
-		&vals.ID, &vals.ProjectID, &vals.EnvironmentID,
-		&vals.VersionID, &vals.Payload, &vals.CommitMessage, &vals.CreatedBy, &vals.CreatedAt,
+		&vals.ID, &vals.ProjectID, &vals.EnvironmentID, &vals.VersionID,
+		&vals.Payload, &vals.CommitMessage, &vals.CreatedBy, &vals.CreatedAt,
 	)
 }
 
@@ -67,7 +67,7 @@ func writeValuesOr404(w http.ResponseWriter, err error, notFoundMsg string, vals
 	writeJSON(w, http.StatusOK, vals)
 }
 
-// GetLatest returns the latest version of a value set for (project, env).
+// GetLatest returns the values for (project, env) as of the project's latest version.
 func (h *ValuesHandler) GetLatest(w http.ResponseWriter, r *http.Request) {
 	projectID, envID, ok := h.resolveProjectAndEnv(w, r)
 	if !ok {
@@ -76,15 +76,20 @@ func (h *ValuesHandler) GetLatest(w http.ResponseWriter, r *http.Request) {
 
 	var vals models.ProjectConfigValues
 	err := scanValues(h.DB.QueryRowContext(r.Context(), `
-		SELECT id, project_id, environment_id, version_id, payload, commit_message, created_by, created_at
-		FROM project_config_values
-		WHERE project_id = $1 AND environment_id = $2
-		ORDER BY version_id DESC LIMIT 1
+		SELECT v.id, v.project_id, v.environment_id, v.version_id, v.payload, v.commit_message, v.created_by, v.created_at
+		FROM project_version_values pvv
+		JOIN project_config_values v ON v.id = pvv.values_row_id
+		WHERE pvv.environment_id = $2
+		  AND pvv.project_version_id = (
+		      SELECT id FROM project_versions
+		      WHERE project_id = $1 AND NOT is_anchor
+		      ORDER BY version_id DESC LIMIT 1
+		  )
 	`, projectID, envID), &vals)
 	writeValuesOr404(w, err, "values not found", vals)
 }
 
-// GetVersion returns a specific version of a value set.
+// GetVersion returns the values pinned to a specific project version.
 func (h *ValuesHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
 	projectID, envID, ok := h.resolveProjectAndEnv(w, r)
 	if !ok {
@@ -99,9 +104,11 @@ func (h *ValuesHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
 
 	var vals models.ProjectConfigValues
 	err = scanValues(h.DB.QueryRowContext(r.Context(), `
-		SELECT id, project_id, environment_id, version_id, payload, commit_message, created_by, created_at
-		FROM project_config_values
-		WHERE project_id = $1 AND environment_id = $2 AND version_id = $3
-	`, projectID, envID, versionID), &vals)
+		SELECT v.id, v.project_id, v.environment_id, v.version_id, v.payload, v.commit_message, v.created_by, v.created_at
+		FROM project_versions pv
+		JOIN project_version_values pvv ON pvv.project_version_id = pv.id
+		JOIN project_config_values v ON v.id = pvv.values_row_id
+		WHERE pv.project_id = $1 AND pv.version_id = $2 AND pvv.environment_id = $3
+	`, projectID, versionID, envID), &vals)
 	writeValuesOr404(w, err, "values version not found", vals)
 }

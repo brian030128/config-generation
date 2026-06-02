@@ -8,6 +8,25 @@ export const projectKeys = {
   members: (name: string) => ["projects", name, "members"] as const,
   memberPermissions: (name: string, userId: number) =>
     ["projects", name, "members", userId, "permissions"] as const,
+  versions: (name: string) => ["projects", name, "versions"] as const,
+  versionDetail: (name: string, versionId: number) =>
+    ["projects", name, "versions", versionId] as const,
+}
+
+export function useProjectVersions(name: string) {
+  return useQuery({
+    queryKey: projectKeys.versions(name),
+    queryFn: () => projectsApi.listVersions(name),
+    enabled: !!name,
+  })
+}
+
+export function useProjectVersion(name: string, versionId: number) {
+  return useQuery({
+    queryKey: projectKeys.versionDetail(name, versionId),
+    queryFn: () => projectsApi.getVersion(name, versionId),
+    enabled: !!name && versionId > 0,
+  })
 }
 
 export function useProjects() {

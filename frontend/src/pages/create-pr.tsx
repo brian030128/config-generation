@@ -32,7 +32,20 @@ export default function CreatePRPage() {
     return <Navigate to={`/global-values/${name}`} replace />
   }
 
-  const currentEntries = current ? Object.entries(current.payload) : []
+  // The "current" payload is the entry named after the group (legacy single-
+  // entry convention) — falling back to the first entry if absent. Matches the
+  // detail page's editable entry selection.
+  const currentEntryName = (() => {
+    const values = current?.latest_version?.values
+    if (!values) return null
+    const names = Object.keys(values)
+    if (names.length === 0) return null
+    return names.includes(name) ? name : names[0]
+  })()
+  const currentPayload: Record<string, GlobalValueValue> = currentEntryName
+    ? current?.latest_version?.values?.[currentEntryName] ?? {}
+    : {}
+  const currentEntries = Object.entries(currentPayload)
   const proposedEntries = Object.entries(proposedPayload)
 
   // Build a unified set of keys for diffing
@@ -107,7 +120,7 @@ export default function CreatePRPage() {
             <span>Proposed</span>
           </div>
           {allKeys.map((key) => {
-            const currentVal = current?.payload[key]
+            const currentVal = currentPayload[key]
             const proposedVal = proposedPayload[key]
             const isAdded = currentVal === undefined
             const isRemoved = proposedVal === undefined

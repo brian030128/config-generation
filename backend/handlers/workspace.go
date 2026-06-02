@@ -143,34 +143,8 @@ func (h *PullRequestHandler) stage(w http.ResponseWriter, r *http.Request, sc st
 		return
 	}
 
-	// Capture the base version for conflict detection on versioned objects.
-	var baseVersionID int
-	switch sc.objectType {
-	case "template":
-		if err = tx.QueryRowContext(r.Context(), `
-			SELECT COALESCE(
-				(SELECT version_id FROM project_config_templates
-				 WHERE project_id = $1 AND template_name = $2
-				 ORDER BY version_id DESC LIMIT 1),
-			0)
-		`, projectID, sc.templateName).Scan(&baseVersionID); err != nil {
-			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
-			return
-		}
-	case "values":
-		var envID int64
-		if tx.QueryRowContext(r.Context(),
-			`SELECT id FROM environments WHERE project_id = $1 AND name = $2`,
-			projectID, sc.envName).Scan(&envID) == nil {
-			_ = tx.QueryRowContext(r.Context(), `
-				SELECT COALESCE(
-					(SELECT version_id FROM project_config_values
-					 WHERE project_id = $1 AND environment_id = $2
-					 ORDER BY version_id DESC LIMIT 1),
-				0)
-			`, projectID, envID).Scan(&baseVersionID)
-		}
-	}
+	// Conflict detection is now PR-level (pull_requests.base_project_version_id),
+	// so individual pr_changes rows no longer record a per-item base version.
 
 	// Replace any prior staged change for the same object (last write wins).
 	switch sc.objectType {
@@ -193,9 +167,9 @@ func (h *PullRequestHandler) stage(w http.ResponseWriter, r *http.Request, sc st
 	}
 
 	if _, err = tx.ExecContext(r.Context(), `
-		INSERT INTO pr_changes (pr_id, object_type, operation, project_id, template_name, environment_name, base_version_id, proposed_payload)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-	`, pr.ID, sc.objectType, sc.operation, projectID, sc.templateName, sc.envName, baseVersionID, sc.payload); err != nil {
+		INSERT INTO pr_changes (pr_id, object_type, operation, project_id, template_name, environment_name, proposed_payload)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`, pr.ID, sc.objectType, sc.operation, projectID, sc.templateName, sc.envName, sc.payload); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to stage change", "internal")
 		return
 	}
@@ -298,14 +272,22 @@ func (h *PullRequestHandler) StageValuesUpsert(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Creating the first (v1) value set for an env requires create:env_values;
+	// Creating the first value set for an env requires create:env_values;
 	// editing an existing set only needs write (gated on the route).
+	// "Live" means: the project's latest non-anchor version has a link for this env.
 	var liveExists bool
 	if err = h.DB.QueryRowContext(r.Context(), `
 		SELECT EXISTS (
-			SELECT 1 FROM project_config_values v
-			JOIN environments e ON e.id = v.environment_id
-			WHERE v.project_id = $1 AND e.name = $2
+			SELECT 1
+			FROM project_versions pv
+			JOIN project_version_values pvv ON pvv.project_version_id = pv.id
+			JOIN environments e ON e.id = pvv.environment_id
+			WHERE pv.project_id = $1 AND e.name = $2 AND NOT pv.is_anchor
+			  AND pv.id = (
+			      SELECT id FROM project_versions
+			      WHERE project_id = $1 AND NOT is_anchor
+			      ORDER BY version_id DESC LIMIT 1
+			  )
 		)
 	`, projectID, envName).Scan(&liveExists); err != nil {
 		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
@@ -554,14 +536,23 @@ type liveTmpl struct {
 	body    string
 }
 
-// loadLiveTemplates returns the latest body+version for each template in the
-// project, plus the deterministic name order to merge against.
+// loadLiveTemplates returns the body and the project-version each template
+// belongs to (the project's latest non-anchor version), plus the deterministic
+// name order to merge against.
 func (h *PullRequestHandler) loadLiveTemplates(ctx context.Context, projectID int64) (map[string]liveTmpl, []string, error) {
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT DISTINCT ON (template_name) template_name, version_id, body
-		FROM project_config_templates
-		WHERE project_id = $1
-		ORDER BY template_name, version_id DESC
+		SELECT pvt.template_name, pv.version_id, t.body
+		FROM project_versions pv
+		JOIN project_version_templates pvt ON pvt.project_version_id = pv.id
+		JOIN project_config_templates t ON t.id = pvt.template_row_id
+		WHERE pv.project_id = $1
+		  AND NOT pv.is_anchor
+		  AND pv.id = (
+		      SELECT id FROM project_versions
+		      WHERE project_id = $1 AND NOT is_anchor
+		      ORDER BY version_id DESC LIMIT 1
+		  )
+		ORDER BY pvt.template_name
 	`, projectID)
 	if err != nil {
 		return nil, nil, err
@@ -591,7 +582,7 @@ func mergeTemplateOverlay(order []string, live map[string]liveTmpl, staged map[s
 		if ok && c.Operation == "delete" {
 			continue // hidden in the overlay
 		}
-		item := models.WorkspaceTemplateItem{TemplateName: name, Body: live[name].body, VersionID: live[name].version}
+		item := models.WorkspaceTemplateItem{TemplateName: name, Body: live[name].body, BaseProjectVID: live[name].version}
 		if ok {
 			item.Body = c.ProposedPayload
 			item.Staged = true
@@ -608,7 +599,7 @@ func mergeTemplateOverlay(order []string, live map[string]liveTmpl, staged map[s
 			continue
 		}
 		items = append(items, models.WorkspaceTemplateItem{
-			TemplateName: name, Body: c.ProposedPayload, VersionID: 0, Staged: true, Operation: c.Operation,
+			TemplateName: name, Body: c.ProposedPayload, BaseProjectVID: 0, Staged: true, Operation: c.Operation,
 		})
 	}
 	return items
@@ -671,9 +662,12 @@ func (h *PullRequestHandler) OverlayTemplate(w http.ResponseWriter, r *http.Requ
 	var liveVersion int
 	var liveBody string
 	liveErr := h.DB.QueryRowContext(r.Context(), `
-		SELECT version_id, body FROM project_config_templates
-		WHERE project_id = $1 AND template_name = $2
-		ORDER BY version_id DESC LIMIT 1
+		SELECT pv.version_id, t.body
+		FROM project_versions pv
+		JOIN project_version_templates pvt ON pvt.project_version_id = pv.id
+		JOIN project_config_templates t ON t.id = pvt.template_row_id
+		WHERE pv.project_id = $1 AND pvt.template_name = $2 AND NOT pv.is_anchor
+		ORDER BY pv.version_id DESC LIMIT 1
 	`, projectID, templateName).Scan(&liveVersion, &liveBody)
 	if liveErr != nil && liveErr != sql.ErrNoRows {
 		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
@@ -686,7 +680,7 @@ func (h *PullRequestHandler) OverlayTemplate(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		writeJSON(w, http.StatusOK, models.WorkspaceTemplateItem{
-			TemplateName: templateName, Body: c.ProposedPayload, VersionID: liveVersion, Staged: true, Operation: c.Operation,
+			TemplateName: templateName, Body: c.ProposedPayload, BaseProjectVID: liveVersion, Staged: true, Operation: c.Operation,
 		})
 		return
 	}
@@ -695,7 +689,7 @@ func (h *PullRequestHandler) OverlayTemplate(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, models.WorkspaceTemplateItem{
-		TemplateName: templateName, Body: liveBody, VersionID: liveVersion,
+		TemplateName: templateName, Body: liveBody, BaseProjectVID: liveVersion,
 	})
 }
 
@@ -804,11 +798,13 @@ func (h *PullRequestHandler) effectiveValues(ctx context.Context, projectID, use
 	var liveVersion int
 	var livePayload json.RawMessage
 	liveErr := h.DB.QueryRowContext(ctx, `
-		SELECT v.version_id, v.payload
-		FROM project_config_values v
-		JOIN environments e ON e.id = v.environment_id
-		WHERE v.project_id = $1 AND e.name = $2
-		ORDER BY v.version_id DESC LIMIT 1
+		SELECT pv.version_id, v.payload
+		FROM project_versions pv
+		JOIN project_version_values pvv ON pvv.project_version_id = pv.id
+		JOIN environments e ON e.id = pvv.environment_id
+		JOIN project_config_values v ON v.id = pvv.values_row_id
+		WHERE pv.project_id = $1 AND e.name = $2 AND NOT pv.is_anchor
+		ORDER BY pv.version_id DESC LIMIT 1
 	`, projectID, envName).Scan(&liveVersion, &livePayload)
 	if liveErr != nil && liveErr != sql.ErrNoRows {
 		return models.WorkspaceValuesResponse{}, valuesAbsent, liveErr
@@ -819,14 +815,14 @@ func (h *PullRequestHandler) effectiveValues(ctx context.Context, projectID, use
 			return models.WorkspaceValuesResponse{}, valuesDeleted, nil
 		}
 		return models.WorkspaceValuesResponse{
-			EnvironmentName: envName, Payload: json.RawMessage(c.ProposedPayload), VersionID: liveVersion, Staged: true, Operation: c.Operation,
+			EnvironmentName: envName, Payload: json.RawMessage(c.ProposedPayload), BaseProjectVID: liveVersion, Staged: true, Operation: c.Operation,
 		}, valuesPresent, nil
 	}
 	if liveErr == sql.ErrNoRows {
 		return models.WorkspaceValuesResponse{}, valuesAbsent, nil
 	}
 	return models.WorkspaceValuesResponse{
-		EnvironmentName: envName, Payload: livePayload, VersionID: liveVersion,
+		EnvironmentName: envName, Payload: livePayload, BaseProjectVID: liveVersion,
 	}, valuesPresent, nil
 }
 

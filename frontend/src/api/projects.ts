@@ -7,6 +7,8 @@ import type {
   ProjectMembersResponse,
   AddProjectMemberRequest,
   MemberPermissions,
+  ProjectVersion,
+  ProjectVersionManifest,
 } from "./types"
 
 export const projectsApi = {
@@ -51,5 +53,15 @@ export const projectsApi = {
         `/projects/${name}/members/${userId}/permissions`,
         perms,
       )
+      .then((r) => r.data),
+
+  listVersions: (name: string) =>
+    client
+      .get<ListResponse<ProjectVersion>>(`/projects/${name}/versions`)
+      .then((r) => r.data),
+
+  getVersion: (name: string, versionId: number) =>
+    client
+      .get<ProjectVersionManifest>(`/projects/${name}/versions/${versionId}`)
       .then((r) => r.data),
 }

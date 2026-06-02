@@ -64,7 +64,7 @@ function TemplateDiffCard({ change, projectName }: Readonly<{ change: PRChange; 
       <div className="flex items-center justify-between border-b bg-muted/50 px-4 py-2">
         <span className="text-sm font-medium">Template: {change.template_name}</span>
         <span className="text-xs text-muted-foreground">
-          v{change.base_version_id} → proposed
+          proposed change
         </span>
       </div>
       <div className="max-h-[500px] overflow-auto font-mono text-sm">
@@ -118,7 +118,17 @@ function KvDiffCard({ change }: Readonly<{ change: PRChange }>) {
     }
   })()
 
-  const current: Record<string, unknown> = currentGV?.payload ?? {}
+  // The "current" payload for the diff is the same single entry the editor
+  // shows: prefer the entry named after the group, fall back to the first.
+  const current: Record<string, unknown> = (() => {
+    const values = currentGV?.latest_version?.values
+    if (!values) return {}
+    const groupName = globalValuesName ?? ""
+    const names = Object.keys(values)
+    if (names.length === 0) return {}
+    const chosen = names.includes(groupName) ? groupName : names[0]
+    return (values[chosen] ?? {}) as Record<string, unknown>
+  })()
 
   const allKeys = Array.from(
     new Set([...Object.keys(current), ...Object.keys(proposed)]),
@@ -134,7 +144,7 @@ function KvDiffCard({ change }: Readonly<{ change: PRChange }>) {
       <div className="flex items-center justify-between border-b bg-muted/50 px-4 py-2">
         <span className="text-sm font-medium">{label}</span>
         <span className="text-xs text-muted-foreground">
-          v{change.base_version_id} → proposed
+          proposed change
         </span>
       </div>
       <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 border-b bg-muted/30 px-4 py-2 text-sm font-medium text-muted-foreground">

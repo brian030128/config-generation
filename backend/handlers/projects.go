@@ -278,12 +278,9 @@ func (h *ProjectHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	// Delete dependent rows in order to satisfy FK constraints.
 	cascadeQueries := []string{
-		// deployments: clear self-reference first, then child tables, then deployments
+		// deployments: clear self-reference + group refs first, then child tables
 		`UPDATE deployments SET rolled_back_from = NULL WHERE project_id = $1`,
-		`DELETE FROM deployment_entry_global_refs WHERE deployment_entry_id IN (
-			SELECT de.id FROM deployment_entries de
-			JOIN deployments d ON d.id = de.deployment_id
-			WHERE d.project_id = $1)`,
+		`DELETE FROM deployment_group_refs WHERE deployment_id IN (SELECT id FROM deployments WHERE project_id = $1)`,
 		`DELETE FROM deployment_entries WHERE deployment_id IN (SELECT id FROM deployments WHERE project_id = $1)`,
 		`DELETE FROM deployments WHERE project_id = $1`,
 		// pull requests and their child tables
@@ -292,7 +289,11 @@ func (h *ProjectHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		`DELETE FROM pull_requests WHERE project_id = $1`,
 		// members
 		`DELETE FROM project_members WHERE project_id = $1`,
-		// config data and environments
+		// project version snapshot rows must go before the content rows they
+		// reference, which in turn must go before environments.
+		`DELETE FROM project_version_values WHERE project_version_id IN (SELECT id FROM project_versions WHERE project_id = $1)`,
+		`DELETE FROM project_version_templates WHERE project_version_id IN (SELECT id FROM project_versions WHERE project_id = $1)`,
+		`DELETE FROM project_versions WHERE project_id = $1`,
 		`DELETE FROM project_config_values WHERE project_id = $1`,
 		`DELETE FROM project_config_templates WHERE project_id = $1`,
 		`DELETE FROM env_admins WHERE environment_id IN (SELECT id FROM environments WHERE project_id = $1)`,
@@ -327,4 +328,124 @@ func (h *ProjectHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ListVersions returns the project's version history, newest first.
+func (h *ProjectHandler) ListVersions(w http.ResponseWriter, r *http.Request) {
+	projectID, err := resolveProjectID(r, h.DB)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, msgProjectNotFound, "not_found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
+		return
+	}
+
+	rows, err := h.DB.QueryContext(r.Context(), `
+		SELECT id, project_id, version_id, parent_version_id, commit_message, is_anchor, created_by, created_at
+		FROM project_versions
+		WHERE project_id = $1
+		ORDER BY version_id DESC
+	`, projectID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
+		return
+	}
+	defer rows.Close()
+
+	versions := []models.ProjectVersion{}
+	for rows.Next() {
+		var v models.ProjectVersion
+		if err := rows.Scan(&v.ID, &v.ProjectID, &v.VersionID, &v.ParentVersionID, &v.CommitMessage, &v.IsAnchor, &v.CreatedBy, &v.CreatedAt); err != nil {
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
+			return
+		}
+		versions = append(versions, v)
+	}
+	if err := rows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
+		return
+	}
+	writeJSON(w, http.StatusOK, models.ListResponse[models.ProjectVersion]{Items: versions, Count: len(versions)})
+}
+
+// GetVersion returns the manifest of one project version: its metadata plus
+// the materialized list of templates and values it snapshots.
+func (h *ProjectHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
+	projectID, err := resolveProjectID(r, h.DB)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, msgProjectNotFound, "not_found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
+		return
+	}
+
+	versionID := chi.URLParam(r, "versionID")
+
+	var manifest models.ProjectVersionManifest
+	err = h.DB.QueryRowContext(r.Context(), `
+		SELECT id, project_id, version_id, parent_version_id, commit_message, is_anchor, created_by, created_at
+		FROM project_versions
+		WHERE project_id = $1 AND version_id = $2::int
+	`, projectID, versionID).Scan(
+		&manifest.ID, &manifest.ProjectID, &manifest.VersionID, &manifest.ParentVersionID,
+		&manifest.CommitMessage, &manifest.IsAnchor, &manifest.CreatedBy, &manifest.CreatedAt,
+	)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "project version not found", "not_found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
+		return
+	}
+
+	tmplRows, err := h.DB.QueryContext(r.Context(), `
+		SELECT t.id, t.project_id, t.template_name, t.version_id, t.body, t.commit_message, t.created_by, t.created_at
+		FROM project_version_templates pvt
+		JOIN project_config_templates t ON t.id = pvt.template_row_id
+		WHERE pvt.project_version_id = $1
+		ORDER BY t.template_name
+	`, manifest.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
+		return
+	}
+	defer tmplRows.Close()
+	manifest.Templates = []models.ProjectConfigTemplate{}
+	for tmplRows.Next() {
+		var t models.ProjectConfigTemplate
+		if err := tmplRows.Scan(&t.ID, &t.ProjectID, &t.TemplateName, &t.VersionID, &t.Body, &t.CommitMessage, &t.CreatedBy, &t.CreatedAt); err != nil {
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
+			return
+		}
+		manifest.Templates = append(manifest.Templates, t)
+	}
+
+	valRows, err := h.DB.QueryContext(r.Context(), `
+		SELECT v.id, v.project_id, v.environment_id, v.version_id, v.payload, v.commit_message, v.created_by, v.created_at
+		FROM project_version_values pvv
+		JOIN project_config_values v ON v.id = pvv.values_row_id
+		WHERE pvv.project_version_id = $1
+		ORDER BY v.environment_id
+	`, manifest.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
+		return
+	}
+	defer valRows.Close()
+	manifest.Values = []models.ProjectConfigValues{}
+	for valRows.Next() {
+		var v models.ProjectConfigValues
+		if err := valRows.Scan(&v.ID, &v.ProjectID, &v.EnvironmentID, &v.VersionID, &v.Payload, &v.CommitMessage, &v.CreatedBy, &v.CreatedAt); err != nil {
+			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
+			return
+		}
+		manifest.Values = append(manifest.Values, v)
+	}
+
+	writeJSON(w, http.StatusOK, manifest)
 }

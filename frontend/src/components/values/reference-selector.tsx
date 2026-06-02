@@ -24,7 +24,17 @@ export function ReferenceSelector({
   const { data: gvDetail } = useGlobalValue(group)
 
   const groups = gvList?.items ?? []
-  const keys = gvDetail ? Object.keys(gvDetail.payload) : []
+  // Keys for the picker are the union of keys across every value entry in the
+  // group's latest version — the flat merge that renderers do at lookup time.
+  const keys = gvDetail
+    ? Array.from(
+        new Set(
+          Object.values(gvDetail.latest_version.values ?? {}).flatMap(
+            (payload) => Object.keys(payload ?? {}),
+          ),
+        ),
+      )
+    : []
 
   return (
     <div className="flex gap-2">

@@ -1,6 +1,7 @@
 package bddtest
 
 import (
+	"fmt"
 	"net/http"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -52,19 +53,20 @@ var _ = Describe("Project Config Values", func() {
 	})
 
 	Context("full-copy versioning (read model)", func() {
+		var pvV1 int
 		BeforeEach(func() {
-			seedValues(aliceID, "billing-service", "staging", map[string]any{"service_name": "billing-v1"})
+			pvV1 = seedValues(aliceID, "billing-service", "staging", map[string]any{"service_name": "billing-v1"})
 		})
 
-		It("preserves version 1 immutably after a new version", func() {
+		It("preserves the v1 snapshot immutably after a new project version", func() {
 			seedValues(aliceID, "billing-service", "staging", map[string]any{"service_name": "billing-v2"})
 
-			rec := doRequest("GET", "/api/projects/billing-service/envs/staging/values/versions/1", nil, aliceID, "alice")
+			rec := doRequest("GET", fmt.Sprintf("/api/projects/billing-service/envs/staging/values/versions/%d", pvV1), nil, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			Expect(decode[map[string]any](rec)["payload"].(map[string]any)["service_name"]).To(Equal("billing-v1"))
 		})
 
-		It("returns the latest version by default", func() {
+		It("returns the latest content version on the default endpoint", func() {
 			seedValues(aliceID, "billing-service", "staging", map[string]any{"service_name": "billing-v2"})
 
 			rec := doRequest("GET", "/api/projects/billing-service/envs/staging/values", nil, aliceID, "alice")

@@ -126,13 +126,70 @@ func decode[T any](rec *httptest.ResponseRecorder) T {
 func truncateAll() {
 	GinkgoHelper()
 	_, err := testDB.ExecContext(context.Background(), `
-		TRUNCATE users, environments, projects, project_config_templates,
-		         project_config_values, global_values, roles, role_permissions,
-		         user_roles, project_members, deployments, deployment_entries,
-		         deployment_entry_global_refs, pull_requests, pr_changes,
-		         pr_approvals CASCADE
+		TRUNCATE users, environments, projects,
+		         project_versions, project_version_templates, project_version_values,
+		         project_config_templates, project_config_values,
+		         global_values, global_values_groups, global_values_group_versions,
+		         global_values_group_version_entries,
+		         roles, role_permissions, user_roles, project_members,
+		         deployments, deployment_entries, deployment_group_refs,
+		         pull_requests, pr_changes, pr_approvals CASCADE
 	`)
 	Expect(err).NotTo(HaveOccurred())
+}
+
+// appendProjectSnapshot creates a new project_version row that copies forward
+// the project's previous version's links, then applies the supplied template
+// and values overrides. Used by the seed helpers to keep the snapshot layer in
+// sync with directly-inserted content rows.
+func appendProjectSnapshot(projectID int64, userID int64, templateLinks map[string]int64, valueLinks map[int64]int64) int64 {
+	GinkgoHelper()
+	ctx := context.Background()
+	var prevID *int64
+	var prevOrd *int
+	_ = testDB.QueryRowContext(ctx, `
+		SELECT id, version_id FROM project_versions
+		WHERE project_id = $1 ORDER BY version_id DESC LIMIT 1
+	`, projectID).Scan(&prevID, &prevOrd)
+	nextOrd := 1
+	if prevOrd != nil {
+		nextOrd = *prevOrd + 1
+	}
+	var newID int64
+	err := testDB.QueryRowContext(ctx, `
+		INSERT INTO project_versions (project_id, version_id, parent_version_id, created_by)
+		VALUES ($1, $2, $3, $4) RETURNING id
+	`, projectID, nextOrd, prevID, userID).Scan(&newID)
+	Expect(err).NotTo(HaveOccurred())
+	if prevID != nil {
+		_, err = testDB.ExecContext(ctx, `
+			INSERT INTO project_version_templates (project_version_id, template_name, template_row_id)
+			SELECT $1, template_name, template_row_id FROM project_version_templates WHERE project_version_id = $2
+		`, newID, *prevID)
+		Expect(err).NotTo(HaveOccurred())
+		_, err = testDB.ExecContext(ctx, `
+			INSERT INTO project_version_values (project_version_id, environment_id, values_row_id)
+			SELECT $1, environment_id, values_row_id FROM project_version_values WHERE project_version_id = $2
+		`, newID, *prevID)
+		Expect(err).NotTo(HaveOccurred())
+	}
+	for name, rowID := range templateLinks {
+		_, err = testDB.ExecContext(ctx, `
+			INSERT INTO project_version_templates (project_version_id, template_name, template_row_id)
+			VALUES ($1, $2, $3)
+			ON CONFLICT (project_version_id, template_name) DO UPDATE SET template_row_id = EXCLUDED.template_row_id
+		`, newID, name, rowID)
+		Expect(err).NotTo(HaveOccurred())
+	}
+	for envID, rowID := range valueLinks {
+		_, err = testDB.ExecContext(ctx, `
+			INSERT INTO project_version_values (project_version_id, environment_id, values_row_id)
+			VALUES ($1, $2, $3)
+			ON CONFLICT (project_version_id, environment_id) DO UPDATE SET values_row_id = EXCLUDED.values_row_id
+		`, newID, envID, rowID)
+		Expect(err).NotTo(HaveOccurred())
+	}
+	return newID
 }
 
 func createProject(userID int64, username, projectName string) map[string]any {
@@ -168,9 +225,10 @@ func createEnvironment(userID int64, username, projectName, envName string) map[
 	}
 }
 
-// createTemplate seeds a published template (v1) directly in the DB. Authoring
-// now goes through the workspace; this helper exists to set up live state for
-// tests that exercise reads or downstream behaviour.
+// createTemplate seeds a published template directly in the DB plus the
+// project_version that snapshots it. Authoring now goes through the workspace;
+// this helper exists to set up live state for tests that exercise reads or
+// downstream behaviour.
 func createTemplate(userID int64, username, projectName, templateName, body string) map[string]any {
 	var projectID int64
 	err := testDB.QueryRowContext(context.Background(),
@@ -180,21 +238,31 @@ func createTemplate(userID int64, username, projectName, templateName, body stri
 	var id int64
 	err = testDB.QueryRowContext(context.Background(), `
 		INSERT INTO project_config_templates (project_id, template_name, version_id, body, created_by)
-		VALUES ($1, $2, 1, $3, $4) RETURNING id
+		VALUES ($1, $2,
+		        COALESCE((SELECT MAX(version_id) FROM project_config_templates
+		                  WHERE project_id = $1 AND template_name = $2), 0) + 1,
+		        $3, $4) RETURNING id
 	`, projectID, templateName, body, userID).Scan(&id)
 	Expect(err).NotTo(HaveOccurred())
+
+	pvID := appendProjectSnapshot(projectID, userID,
+		map[string]int64{templateName: id}, nil)
+	var pvOrd int
+	_ = testDB.QueryRowContext(context.Background(),
+		`SELECT version_id FROM project_versions WHERE id = $1`, pvID).Scan(&pvOrd)
 
 	return map[string]any{
 		"id":            float64(id),
 		"project_id":    float64(projectID),
 		"template_name": templateName,
-		"version_id":    float64(1),
+		"version_id":    float64(pvOrd),
 		"body":          body,
 	}
 }
 
-// seedValues seeds a published value set version directly in the DB (computing
-// the next version), returning the created version_id.
+// seedValues seeds a published value set version directly in the DB plus the
+// project_version that snapshots it. Returns the (per-project) version_id of
+// the resulting project_version.
 func seedValues(userID int64, projectName, envName string, payload map[string]any) int {
 	var projectID, envID int64
 	err := testDB.QueryRowContext(context.Background(),
@@ -207,18 +275,22 @@ func seedValues(userID int64, projectName, envName string, payload map[string]an
 	raw, err := json.Marshal(payload)
 	Expect(err).NotTo(HaveOccurred())
 
-	var version int
+	var rowID int64
 	err = testDB.QueryRowContext(context.Background(), `
 		INSERT INTO project_config_values (project_id, environment_id, version_id, payload, created_by)
 		VALUES ($1, $2,
-			COALESCE((SELECT version_id FROM project_config_values
-			          WHERE project_id = $1 AND environment_id = $2
-			          ORDER BY version_id DESC LIMIT 1), 0) + 1,
+			COALESCE((SELECT MAX(version_id) FROM project_config_values
+			          WHERE project_id = $1 AND environment_id = $2), 0) + 1,
 			$3, $4)
-		RETURNING version_id
-	`, projectID, envID, raw, userID).Scan(&version)
+		RETURNING id
+	`, projectID, envID, raw, userID).Scan(&rowID)
 	Expect(err).NotTo(HaveOccurred())
-	return version
+
+	pvID := appendProjectSnapshot(projectID, userID, nil, map[int64]int64{envID: rowID})
+	var pvOrd int
+	_ = testDB.QueryRowContext(context.Background(),
+		`SELECT version_id FROM project_versions WHERE id = $1`, pvID).Scan(&pvOrd)
+	return pvOrd
 }
 
 // submitApproveMerge takes the caller's active workspace through submit →
@@ -245,23 +317,55 @@ func submitApproveMergeBy(authorID int64, authorName string, approverID int64, a
 	Expect(rec.Code).To(Equal(http.StatusOK))
 }
 
-// seedGlobalValues seeds a published global values entry (v1) directly in the
-// DB, for tests that need a ${name.key} reference to resolve during validation.
+// seedGlobalValues seeds a singleton global values group named `name` with one
+// entry of the same name carrying `payload`. The flat map ${name.key} that the
+// renderer expects is built by merging every entry's payload at lookup time, so
+// putting the values under a single entry keeps the test ergonomics from the
+// old per-name model.
 func seedGlobalValues(userID int64, name string, payload map[string]any) {
 	GinkgoHelper()
 	raw, err := json.Marshal(payload)
 	Expect(err).NotTo(HaveOccurred())
-	_, err = testDB.ExecContext(context.Background(), `
-		INSERT INTO global_values (name, version_id, payload, created_by)
-		VALUES ($1, 1, $2, $3)
-	`, name, raw, userID)
+	ctx := context.Background()
+
+	var groupID int64
+	err = testDB.QueryRowContext(ctx, `
+		INSERT INTO global_values_groups (name, approval_condition, created_by)
+		VALUES ($1, $2, $3)
+		RETURNING id
+	`, name, "1 x "+name+"_gv_group_admin", userID).Scan(&groupID)
+	Expect(err).NotTo(HaveOccurred())
+
+	var ggvID int64
+	err = testDB.QueryRowContext(ctx, `
+		INSERT INTO global_values_group_versions (group_id, version_id, created_by)
+		VALUES ($1, 1, $2) RETURNING id
+	`, groupID, userID).Scan(&ggvID)
+	Expect(err).NotTo(HaveOccurred())
+
+	var rowID int64
+	err = testDB.QueryRowContext(ctx, `
+		INSERT INTO global_values (group_id, name, payload, created_by)
+		VALUES ($1, $2, $3, $4) RETURNING id
+	`, groupID, name, raw, userID).Scan(&rowID)
+	Expect(err).NotTo(HaveOccurred())
+
+	_, err = testDB.ExecContext(ctx, `
+		INSERT INTO global_values_group_version_entries (group_version_id, gv_name, gv_row_id)
+		VALUES ($1, $2, $3)
+	`, ggvID, name, rowID)
 	Expect(err).NotTo(HaveOccurred())
 }
 
+// createGlobalValues creates a new global-values group via the API. The values
+// map defaults to one entry named after the group, carrying the full payload —
+// matching the legacy "one name per entry" call shape callers were using.
 func createGlobalValues(userID int64, username, name string, payload map[string]any) map[string]any {
-	rec := doRequest("POST", "/api/global-values", map[string]any{
-		"name":    name,
-		"payload": payload,
+	rec := doRequest("POST", "/api/global-values-groups", map[string]any{
+		"name": name,
+		"values": map[string]any{
+			name: payload,
+		},
 	}, userID, username)
 	Expect(rec.Code).To(Equal(http.StatusCreated))
 	return decode[map[string]any](rec)
@@ -289,25 +393,31 @@ func seedTemplateWritePermission(userID int64, projectName string) {
 	Expect(err).NotTo(HaveOccurred())
 }
 
-// appendTemplateVersion seeds the next published version of a template directly
-// in the DB, returning the new version_id.
+// appendTemplateVersion seeds the next content row of a template plus a new
+// project_version snapshotting it. Returns the per-project version_id of the
+// new project_version under the `version_id` key (keeping the same shape the
+// old per-template call returned).
 func appendTemplateVersion(userID int64, username, projectName, templateName, body string) map[string]any {
 	var projectID int64
 	err := testDB.QueryRowContext(context.Background(),
 		`SELECT id FROM projects WHERE name = $1`, projectName).Scan(&projectID)
 	Expect(err).NotTo(HaveOccurred())
 
-	var version int
+	var rowID int64
 	err = testDB.QueryRowContext(context.Background(), `
 		INSERT INTO project_config_templates (project_id, template_name, version_id, body, created_by)
 		VALUES ($1, $2,
-			COALESCE((SELECT version_id FROM project_config_templates
-			          WHERE project_id = $1 AND template_name = $2
-			          ORDER BY version_id DESC LIMIT 1), 0) + 1,
+			COALESCE((SELECT MAX(version_id) FROM project_config_templates
+			          WHERE project_id = $1 AND template_name = $2), 0) + 1,
 			$3, $4)
-		RETURNING version_id
-	`, projectID, templateName, body, userID).Scan(&version)
+		RETURNING id
+	`, projectID, templateName, body, userID).Scan(&rowID)
 	Expect(err).NotTo(HaveOccurred())
 
-	return map[string]any{"version_id": float64(version), "body": body}
+	pvID := appendProjectSnapshot(projectID, userID, map[string]int64{templateName: rowID}, nil)
+	var pvOrd int
+	_ = testDB.QueryRowContext(context.Background(),
+		`SELECT version_id FROM project_versions WHERE id = $1`, pvID).Scan(&pvOrd)
+
+	return map[string]any{"version_id": float64(pvOrd), "body": body}
 }

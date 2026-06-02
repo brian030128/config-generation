@@ -27,12 +27,12 @@ type RolesResponse struct {
 	ViewerCanManage bool   `json:"viewer_can_manage"`
 }
 
-// GlobalValuesDetailResponse is the latest version of a global values entry plus
-// whether the caller holds grant on it (may edit the approval policy). Mirrors
-// the ViewerCanManage flag projects expose via their members endpoint.
-type GlobalValuesDetailResponse struct {
-	GlobalValues
-	ViewerCanManage bool `json:"viewer_can_manage"`
+// GlobalValuesGroupDetailResponse is the group's latest version (materialized
+// values map) plus whether the caller holds grant on the group.
+type GlobalValuesGroupDetailResponse struct {
+	Group           GlobalValuesGroup        `json:"group"`
+	LatestVersion   GlobalValuesGroupVersion `json:"latest_version"`
+	ViewerCanManage bool                     `json:"viewer_can_manage"`
 }
 
 type ErrorResponse struct {
@@ -71,11 +71,11 @@ type TemplateVariable struct {
 // `operation` is the staged operation (create|update|delete) when staged.
 
 type WorkspaceTemplateItem struct {
-	TemplateName string `json:"template_name"`
-	Body         string `json:"body"`
-	VersionID    int    `json:"version_id"` // live latest version; 0 if new in the workspace
-	Staged       bool   `json:"staged"`
-	Operation    string `json:"operation,omitempty"`
+	TemplateName    string `json:"template_name"`
+	Body            string `json:"body"`
+	BaseProjectVID  int    `json:"base_project_version_id"` // latest project version this template is in; 0 if new in the workspace
+	Staged          bool   `json:"staged"`
+	Operation       string `json:"operation,omitempty"`
 }
 
 type WorkspaceEnvironmentItem struct {
@@ -87,7 +87,7 @@ type WorkspaceEnvironmentItem struct {
 type WorkspaceValuesResponse struct {
 	EnvironmentName string          `json:"environment_name"`
 	Payload         json.RawMessage `json:"payload"`
-	VersionID       int             `json:"version_id"` // live latest version; 0 if staged-new
+	BaseProjectVID  int             `json:"base_project_version_id"` // latest project version this env is in; 0 if staged-new
 	Staged          bool            `json:"staged"`
 	Operation       string          `json:"operation,omitempty"`
 }
@@ -122,17 +122,16 @@ type TemplateRenderResult struct {
 	PreviousOutput       *string `json:"previous_output,omitempty"`
 	TemplateBody         string  `json:"template_body"`
 	PreviousTemplateBody *string `json:"previous_template_body,omitempty"`
-	TemplateVersionID    int     `json:"template_version_id"`
 }
 
 type DeployPreviewResponse struct {
 	Results              []TemplateRenderResult     `json:"results"`
 	ValuesPayload        json.RawMessage            `json:"values_payload"`
 	PreviousValues       *json.RawMessage           `json:"previous_values,omitempty"`
-	ValuesVersionID      int                        `json:"values_version_id"`
+	ProjectVersionID     int64                      `json:"project_version_id"`
 	GlobalValues         map[string]json.RawMessage `json:"global_values"`
 	PreviousGlobalValues map[string]json.RawMessage `json:"previous_global_values,omitempty"`
-	GlobalValuesVersions map[string]int             `json:"global_values_versions"`
+	GroupVersions        map[string]int             `json:"global_values_group_versions"`
 	HasErrors            bool                       `json:"has_errors"`
 }
 
@@ -143,10 +142,9 @@ type DeployResponse struct {
 }
 
 type LatestDeploymentResponse struct {
-	DeploymentID         int64          `json:"deployment_id"`
-	TemplateVersions     map[string]int `json:"template_versions"`
-	ValuesVersionID      int            `json:"values_version_id"`
-	GlobalValuesVersions map[string]int `json:"global_values_versions"`
-	CreatedAt            string         `json:"created_at"`
-	CommitMessage        *string        `json:"commit_message"`
+	DeploymentID     int64          `json:"deployment_id"`
+	ProjectVersionID int64          `json:"project_version_id"`
+	GroupVersions    map[string]int `json:"global_values_group_versions"`
+	CreatedAt        string         `json:"created_at"`
+	CommitMessage    *string        `json:"commit_message"`
 }

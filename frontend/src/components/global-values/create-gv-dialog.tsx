@@ -39,19 +39,23 @@ export function CreateGlobalValuesDialog() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim() || !approvalValidation.valid) return
+    const trimmed = name.trim()
     createGV.mutate(
       {
-        name: name.trim(),
-        payload: {},
+        name: trimmed,
+        // Seed the group with a single entry named after the group; this
+        // matches the legacy "one editable payload per name" convention the
+        // detail page still relies on.
+        values: { [trimmed]: {} },
         commit_message: "Initial creation",
         approval_condition: approvalCondition.trim() || undefined,
       },
       {
-        onSuccess: (gv) => {
-          toast.success(`Global values "${gv.name}" created`)
+        onSuccess: (data) => {
+          toast.success(`Global values "${data.group.name}" created`)
           setOpen(false)
           reset()
-          navigate(`/global-values/${gv.name}`)
+          navigate(`/global-values/${data.group.name}`)
         },
         onError: (err) => {
           toast.error("Failed to create global values", {

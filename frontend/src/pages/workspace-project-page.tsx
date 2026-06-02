@@ -149,7 +149,7 @@ export default function WorkspaceProjectPage() {
                 </span>
                 {c.object_type !== "environment" && (
                   <span className="text-muted-foreground text-xs">
-                    v{c.base_version_id} → draft
+                    draft change
                   </span>
                 )}
               </div>

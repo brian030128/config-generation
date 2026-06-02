@@ -51,22 +51,29 @@ var _ = Describe("Pull Requests", func() {
 			Expect(body["status"]).To(Equal("open"))
 			Expect(body["project_id"]).To(BeNil())
 			Expect(body["author_id"]).To(BeEquivalentTo(aliceID))
+			// The PR pins the group's latest version (v1) as the base for merge.
+			Expect(body["base_group_version_id"]).NotTo(BeNil())
 
 			changes := body["changes"].([]any)
 			Expect(changes).To(HaveLen(1))
 			change := changes[0].(map[string]any)
 			Expect(change["object_type"]).To(Equal("global_values"))
 			Expect(change["global_values_name"]).To(Equal("test_db_values"))
-			Expect(change["base_version_id"]).To(BeEquivalentTo(1))
 		})
 
-		It("records the correct base_version_id after multiple versions", func() {
+		It("records the latest group version as the base when reopened mid-stream", func() {
 			seedGlobalValuesPermission(aliceID, "test_db_values")
-			doRequest("POST", "/api/global-values/test_db_values/versions", map[string]any{
-				"payload": map[string]any{"host": "v2-db", "port": 5432},
+			// Append v2 to the group; the next PR should base on v2.
+			rec := doRequest("POST", "/api/global-values-groups/test_db_values/versions", map[string]any{
+				"values": map[string]any{
+					"test_db_values": map[string]any{"host": "v2-db", "port": 5432},
+				},
 			}, aliceID, "alice")
+			Expect(rec.Code).To(Equal(http.StatusCreated))
+			v2 := decode[map[string]any](rec)
+			v2GroupVersionID := v2["id"]
 
-			rec := doRequest("POST", "/api/pull-requests", map[string]any{
+			rec = doRequest("POST", "/api/pull-requests", map[string]any{
 				"title":              "Update to v3",
 				"object_type":        "global_values",
 				"global_values_name": "test_db_values",
@@ -75,9 +82,7 @@ var _ = Describe("Pull Requests", func() {
 
 			Expect(rec.Code).To(Equal(http.StatusCreated))
 			body := decode[map[string]any](rec)
-			changes := body["changes"].([]any)
-			change := changes[0].(map[string]any)
-			Expect(change["base_version_id"]).To(BeEquivalentTo(2))
+			Expect(body["base_group_version_id"]).To(Equal(v2GroupVersionID))
 		})
 
 		It("rejects missing title with 400", func() {
