@@ -25,7 +25,22 @@ func resolveProjectID(r *http.Request, db *sql.DB) (int64, error) {
 	return id, err
 }
 
-// GetLatest returns the latest version of a template.
+// resolveLatestProjectVersion returns (id, version_id) of the latest non-anchor
+// project_version for the given project, or sql.ErrNoRows when the project has
+// none. Anchor rows are skipped because they only exist to back-fill old
+// deployments and never represent a head editable state.
+func resolveLatestProjectVersion(r *http.Request, db *sql.DB, projectID int64) (int64, int, error) {
+	var id int64
+	var versionID int
+	err := db.QueryRowContext(r.Context(), `
+		SELECT id, version_id FROM project_versions
+		WHERE project_id = $1 AND NOT is_anchor
+		ORDER BY version_id DESC LIMIT 1
+	`, projectID).Scan(&id, &versionID)
+	return id, versionID, err
+}
+
+// GetLatest returns the body of a template as of the project's latest version.
 func (h *TemplateHandler) GetLatest(w http.ResponseWriter, r *http.Request) {
 	projectID, err := resolveProjectID(r, h.DB)
 	if err == sql.ErrNoRows {
@@ -41,10 +56,15 @@ func (h *TemplateHandler) GetLatest(w http.ResponseWriter, r *http.Request) {
 
 	var tmpl models.ProjectConfigTemplate
 	err = h.DB.QueryRowContext(r.Context(), `
-		SELECT id, project_id, template_name, version_id, body, commit_message, created_by, created_at
-		FROM project_config_templates
-		WHERE project_id = $1 AND template_name = $2
-		ORDER BY version_id DESC LIMIT 1
+		SELECT t.id, t.project_id, t.template_name, t.version_id, t.body, t.commit_message, t.created_by, t.created_at
+		FROM project_version_templates pvt
+		JOIN project_config_templates t ON t.id = pvt.template_row_id
+		WHERE pvt.template_name = $2
+		  AND pvt.project_version_id = (
+		      SELECT id FROM project_versions
+		      WHERE project_id = $1 AND NOT is_anchor
+		      ORDER BY version_id DESC LIMIT 1
+		  )
 	`, projectID, templateName).Scan(
 		&tmpl.ID, &tmpl.ProjectID, &tmpl.TemplateName, &tmpl.VersionID,
 		&tmpl.Body, &tmpl.CommitMessage, &tmpl.CreatedBy, &tmpl.CreatedAt,
@@ -61,7 +81,8 @@ func (h *TemplateHandler) GetLatest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, tmpl)
 }
 
-// GetVersion returns a specific version of a template.
+// GetVersion returns the body of a template pinned to a specific project
+// version. The URL's versionID is the per-project ordinal.
 func (h *TemplateHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
 	projectID, err := resolveProjectID(r, h.DB)
 	if err == sql.ErrNoRows {
@@ -82,10 +103,12 @@ func (h *TemplateHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
 
 	var tmpl models.ProjectConfigTemplate
 	err = h.DB.QueryRowContext(r.Context(), `
-		SELECT id, project_id, template_name, version_id, body, commit_message, created_by, created_at
-		FROM project_config_templates
-		WHERE project_id = $1 AND template_name = $2 AND version_id = $3
-	`, projectID, templateName, versionID).Scan(
+		SELECT t.id, t.project_id, t.template_name, t.version_id, t.body, t.commit_message, t.created_by, t.created_at
+		FROM project_versions pv
+		JOIN project_version_templates pvt ON pvt.project_version_id = pv.id
+		JOIN project_config_templates t ON t.id = pvt.template_row_id
+		WHERE pv.project_id = $1 AND pv.version_id = $2 AND pvt.template_name = $3
+	`, projectID, versionID, templateName).Scan(
 		&tmpl.ID, &tmpl.ProjectID, &tmpl.TemplateName, &tmpl.VersionID,
 		&tmpl.Body, &tmpl.CommitMessage, &tmpl.CreatedBy, &tmpl.CreatedAt,
 	)
@@ -101,7 +124,7 @@ func (h *TemplateHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, tmpl)
 }
 
-// ListForProject returns the latest version of each template in a project.
+// ListForProject returns every template visible at the project's latest version.
 func (h *TemplateHandler) ListForProject(w http.ResponseWriter, r *http.Request) {
 	projectID, err := resolveProjectID(r, h.DB)
 	if err == sql.ErrNoRows {
@@ -113,20 +136,30 @@ func (h *TemplateHandler) ListForProject(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	pvID, _, err := resolveLatestProjectVersion(r, h.DB, projectID)
+	if err == sql.ErrNoRows {
+		writeJSON(w, http.StatusOK, models.ListResponse[models.ProjectConfigTemplate]{Items: []models.ProjectConfigTemplate{}, Count: 0})
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
+		return
+	}
+
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT DISTINCT ON (template_name)
-			id, project_id, template_name, version_id, body, commit_message, created_by, created_at
-		FROM project_config_templates
-		WHERE project_id = $1
-		ORDER BY template_name, version_id DESC
-	`, projectID)
+		SELECT t.id, t.project_id, t.template_name, t.version_id, t.body, t.commit_message, t.created_by, t.created_at
+		FROM project_version_templates pvt
+		JOIN project_config_templates t ON t.id = pvt.template_row_id
+		WHERE pvt.project_version_id = $1
+		ORDER BY t.template_name
+	`, pvID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
 	}
 	defer rows.Close()
 
-	var templates []models.ProjectConfigTemplate
+	templates := []models.ProjectConfigTemplate{}
 	for rows.Next() {
 		var t models.ProjectConfigTemplate
 		if err := rows.Scan(&t.ID, &t.ProjectID, &t.TemplateName, &t.VersionID, &t.Body, &t.CommitMessage, &t.CreatedBy, &t.CreatedAt); err != nil {
@@ -140,13 +173,12 @@ func (h *TemplateHandler) ListForProject(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if templates == nil {
-		templates = []models.ProjectConfigTemplate{}
-	}
 	writeJSON(w, http.StatusOK, models.ListResponse[models.ProjectConfigTemplate]{Items: templates, Count: len(templates)})
 }
 
-// ListVersions returns all versions of a template.
+// ListVersions returns the project versions in which this template's body
+// changed (i.e. the entries where template_row_id differs from the immediate
+// predecessor version's row for the same name).
 func (h *TemplateHandler) ListVersions(w http.ResponseWriter, r *http.Request) {
 	projectID, err := resolveProjectID(r, h.DB)
 	if err == sql.ErrNoRows {
@@ -161,10 +193,20 @@ func (h *TemplateHandler) ListVersions(w http.ResponseWriter, r *http.Request) {
 	templateName := chi.URLParam(r, "templateName")
 
 	rows, err := h.DB.QueryContext(r.Context(), `
+		WITH walk AS (
+			SELECT pv.version_id AS pv_version_id, pvt.template_row_id,
+			       t.id, t.project_id, t.template_name, t.version_id, t.body,
+			       t.commit_message, t.created_by, t.created_at,
+			       LAG(pvt.template_row_id) OVER (ORDER BY pv.version_id) AS prev_row_id
+			FROM project_versions pv
+			JOIN project_version_templates pvt ON pvt.project_version_id = pv.id
+			JOIN project_config_templates t ON t.id = pvt.template_row_id
+			WHERE pv.project_id = $1 AND pvt.template_name = $2 AND NOT pv.is_anchor
+		)
 		SELECT id, project_id, template_name, version_id, body, commit_message, created_by, created_at
-		FROM project_config_templates
-		WHERE project_id = $1 AND template_name = $2
-		ORDER BY version_id DESC
+		FROM walk
+		WHERE prev_row_id IS DISTINCT FROM template_row_id
+		ORDER BY pv_version_id DESC
 	`, projectID, templateName)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
@@ -172,7 +214,7 @@ func (h *TemplateHandler) ListVersions(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	var versions []models.ProjectConfigTemplate
+	versions := []models.ProjectConfigTemplate{}
 	for rows.Next() {
 		var t models.ProjectConfigTemplate
 		if err := rows.Scan(&t.ID, &t.ProjectID, &t.TemplateName, &t.VersionID, &t.Body, &t.CommitMessage, &t.CreatedBy, &t.CreatedAt); err != nil {
@@ -186,9 +228,6 @@ func (h *TemplateHandler) ListVersions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if versions == nil {
-		versions = []models.ProjectConfigTemplate{}
-	}
 	writeJSON(w, http.StatusOK, models.ListResponse[models.ProjectConfigTemplate]{Items: versions, Count: len(versions)})
 }
 
@@ -208,9 +247,12 @@ func (h *TemplateHandler) Variables(w http.ResponseWriter, r *http.Request) {
 
 	var body string
 	err = h.DB.QueryRowContext(r.Context(), `
-		SELECT body FROM project_config_templates
-		WHERE project_id = $1 AND template_name = $2
-		ORDER BY version_id DESC LIMIT 1
+		SELECT t.body
+		FROM project_versions pv
+		JOIN project_version_templates pvt ON pvt.project_version_id = pv.id
+		JOIN project_config_templates t ON t.id = pvt.template_row_id
+		WHERE pv.project_id = $1 AND pvt.template_name = $2 AND NOT pv.is_anchor
+		ORDER BY pv.version_id DESC LIMIT 1
 	`, projectID, templateName).Scan(&body)
 	if err == sql.ErrNoRows {
 		writeError(w, http.StatusNotFound, "template not found", "not_found")
@@ -242,13 +284,22 @@ func (h *TemplateHandler) ProjectVariables(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Fetch the latest body of each template in this project.
+	pvID, _, err := resolveLatestProjectVersion(r, h.DB, projectID)
+	if err == sql.ErrNoRows {
+		writeJSON(w, http.StatusOK, models.TemplateVariablesResponse{Variables: []models.TemplateVariable{}})
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
+		return
+	}
+
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT DISTINCT ON (template_name) body
-		FROM project_config_templates
-		WHERE project_id = $1
-		ORDER BY template_name, version_id DESC
-	`, projectID)
+		SELECT t.body
+		FROM project_version_templates pvt
+		JOIN project_config_templates t ON t.id = pvt.template_row_id
+		WHERE pvt.project_version_id = $1
+	`, pvID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return

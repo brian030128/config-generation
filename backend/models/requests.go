@@ -29,16 +29,21 @@ type AppendProjectConfigValuesVersionRequest struct {
 	CommitMessage *string         `json:"commit_message"`
 }
 
-type CreateGlobalValuesRequest struct {
-	Name              string          `json:"name"`
-	Payload           json.RawMessage `json:"payload"`
-	CommitMessage     *string         `json:"commit_message"`
-	ApprovalCondition *string         `json:"approval_condition"`
+// CreateGlobalValuesGroupRequest creates a new group whose v1 contains the
+// provided values map (gv_name -> payload). At least one entry is required.
+type CreateGlobalValuesGroupRequest struct {
+	Name              string                     `json:"name"`
+	Values            map[string]json.RawMessage `json:"values"`
+	CommitMessage     *string                    `json:"commit_message"`
+	ApprovalCondition *string                    `json:"approval_condition"`
 }
 
-type AppendGlobalValuesVersionRequest struct {
-	Payload       json.RawMessage `json:"payload"`
-	CommitMessage *string         `json:"commit_message"`
+// AppendGlobalValuesGroupVersionRequest appends a new group version
+// snapshotting the provided values map. Unchanged entries are carried forward
+// (their content rows are reused).
+type AppendGlobalValuesGroupVersionRequest struct {
+	Values        map[string]json.RawMessage `json:"values"`
+	CommitMessage *string                    `json:"commit_message"`
 }
 
 type CreateRoleRequest struct {
@@ -126,15 +131,15 @@ type SubmitDraftRequest struct {
 	Description *string `json:"description"`
 }
 
+// DeployPreviewRequest / DeployRequest pin a single project version plus,
+// for each referenced global-values group, the group version to use.
 type DeployPreviewRequest struct {
-	TemplateVersions     map[string]int `json:"template_versions"`
-	ValuesVersionID      int            `json:"values_version_id"`
-	GlobalValuesVersions map[string]int `json:"global_values_versions"`
+	ProjectVersionID   int64           `json:"project_version_id"`
+	GroupVersionIDsRaw map[string]int  `json:"global_values_group_versions"` // group name -> group version ordinal
 }
 
 type DeployRequest struct {
-	TemplateVersions     map[string]int `json:"template_versions"`
-	ValuesVersionID      int            `json:"values_version_id"`
-	GlobalValuesVersions map[string]int `json:"global_values_versions"`
-	CommitMessage        *string        `json:"commit_message"`
+	ProjectVersionID   int64           `json:"project_version_id"`
+	GroupVersionIDsRaw map[string]int  `json:"global_values_group_versions"`
+	CommitMessage      *string         `json:"commit_message"`
 }

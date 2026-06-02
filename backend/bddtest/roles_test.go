@@ -208,7 +208,7 @@ var _ = Describe("Roles (global)", func() {
 				{"action": "read", "resource": "global_values", "key_name": "shared"},
 			})
 
-			rec := doRequest("PUT", "/api/global-values/shared/approval-condition", map[string]any{
+			rec := doRequest("PUT", "/api/global-values-groups/shared/approval-condition", map[string]any{
 				"approval_condition": "1 x shared_gv_group_admin AND 1 x gv_reviewer",
 			}, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusOK))
@@ -217,7 +217,7 @@ var _ = Describe("Roles (global)", func() {
 
 		It("rejects a GV condition referencing a non-existent role", func() {
 			createGlobalValues(aliceID, "alice", "shared", map[string]any{"k": "v"})
-			rec := doRequest("PUT", "/api/global-values/shared/approval-condition", map[string]any{
+			rec := doRequest("PUT", "/api/global-values-groups/shared/approval-condition", map[string]any{
 				"approval_condition": "1 x nobody",
 			}, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusBadRequest))

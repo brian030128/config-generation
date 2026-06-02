@@ -91,11 +91,8 @@ export default function GlobalValuesListPage() {
             >
               <div className="flex flex-wrap items-center gap-4">
                 <span className="font-mono text-sm font-medium">{gv.name}</span>
-                <span className="text-xs text-muted-foreground">
-                  {Object.keys(gv.payload).length} keys
-                </span>
                 <Badge variant="outline" className="text-xs">
-                  v{gv.version_id}
+                  group
                 </Badge>
                 <span className="text-xs text-muted-foreground">
                   Updated {formatRelativeTime(gv.created_at)}

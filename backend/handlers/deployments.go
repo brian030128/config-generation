@@ -16,8 +16,8 @@ type DeploymentHandler struct {
 	DB *sql.DB
 }
 
-// Preview renders all templates with pinned versions and returns results plus
-// previous deployment data for diff computation on the client.
+// Preview renders all templates pinned by the project version (filtered to the
+// target environment's values slice) plus the supplied group versions.
 func (h *DeploymentHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	projectID, envID, ok := h.resolveProjectEnv(w, r)
 	if !ok {
@@ -30,38 +30,29 @@ func (h *DeploymentHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch templates at pinned versions
-	templates, templateBodies, ok := h.fetchPinnedTemplates(w, r, projectID, req.TemplateVersions)
+	templates, templateBodies, ok := h.fetchPinnedTemplates(w, r, projectID, req.ProjectVersionID)
+	if !ok {
+		return
+	}
+	valuesPayload, ok := h.fetchPinnedValues(w, r, projectID, envID, req.ProjectVersionID)
+	if !ok {
+		return
+	}
+	gvMap, gvPayloads, ok := h.fetchPinnedGlobalValues(w, r, req.GroupVersionIDsRaw)
 	if !ok {
 		return
 	}
 
-	// Fetch values at pinned version
-	valuesPayload, ok := h.fetchPinnedValues(w, r, projectID, envID, req.ValuesVersionID)
-	if !ok {
-		return
-	}
-
-	// Fetch global values at pinned versions
-	gvMap, gvPayloads, ok := h.fetchPinnedGlobalValues(w, r, req.GlobalValuesVersions)
-	if !ok {
-		return
-	}
-
-	// Render all templates
 	renderResults := services.RenderAll(templates, valuesPayload, gvMap)
 
-	// Fetch last deployment for diff baseline
 	prevTemplates, prevValues, prevGlobalValues := h.fetchLastDeploymentBaseline(r, projectID, envID)
 
-	// Build response
 	hasErrors := false
 	results := make([]models.TemplateRenderResult, len(renderResults))
 	for i, rr := range renderResults {
 		results[i] = models.TemplateRenderResult{
-			TemplateName:      rr.TemplateName,
-			TemplateBody:      templateBodies[rr.TemplateName],
-			TemplateVersionID: req.TemplateVersions[rr.TemplateName],
+			TemplateName: rr.TemplateName,
+			TemplateBody: templateBodies[rr.TemplateName],
 		}
 		if rr.Error != nil {
 			hasErrors = true
@@ -78,22 +69,20 @@ func (h *DeploymentHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	resp := models.DeployPreviewResponse{
+	writeJSON(w, http.StatusOK, models.DeployPreviewResponse{
 		Results:              results,
 		ValuesPayload:        valuesPayload,
 		PreviousValues:       prevValues,
-		ValuesVersionID:      req.ValuesVersionID,
+		ProjectVersionID:     req.ProjectVersionID,
 		GlobalValues:         gvPayloads,
 		PreviousGlobalValues: prevGlobalValues,
-		GlobalValuesVersions: req.GlobalValuesVersions,
+		GroupVersions:        req.GroupVersionIDsRaw,
 		HasErrors:            hasErrors,
-	}
-
-	writeJSON(w, http.StatusOK, resp)
+	})
 }
 
-// Execute renders all templates and, if successful, creates a deployment record
-// and returns the rendered outputs for zip generation on the client.
+// Execute renders all templates and records a deployment pinning one
+// project_version + one group_version per referenced group.
 func (h *DeploymentHandler) Execute(w http.ResponseWriter, r *http.Request) {
 	user := currentUser(r)
 	projectID, envID, ok := h.resolveProjectEnv(w, r)
@@ -107,28 +96,21 @@ func (h *DeploymentHandler) Execute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch templates at pinned versions
-	templates, _, ok := h.fetchPinnedTemplates(w, r, projectID, req.TemplateVersions)
+	templates, _, ok := h.fetchPinnedTemplates(w, r, projectID, req.ProjectVersionID)
+	if !ok {
+		return
+	}
+	valuesPayload, ok := h.fetchPinnedValues(w, r, projectID, envID, req.ProjectVersionID)
+	if !ok {
+		return
+	}
+	gvMap, _, ok := h.fetchPinnedGlobalValues(w, r, req.GroupVersionIDsRaw)
 	if !ok {
 		return
 	}
 
-	// Fetch values at pinned version
-	valuesPayload, ok := h.fetchPinnedValues(w, r, projectID, envID, req.ValuesVersionID)
-	if !ok {
-		return
-	}
-
-	// Fetch global values at pinned versions
-	gvMap, _, ok := h.fetchPinnedGlobalValues(w, r, req.GlobalValuesVersions)
-	if !ok {
-		return
-	}
-
-	// Render all templates
 	renderResults := services.RenderAll(templates, valuesPayload, gvMap)
 
-	// Check for errors
 	for _, rr := range renderResults {
 		if rr.Error != nil {
 			writeError(w, http.StatusUnprocessableEntity, rr.Error.Message, string(rr.Error.Kind))
@@ -136,7 +118,6 @@ func (h *DeploymentHandler) Execute(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Create deployment record in a transaction
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
@@ -146,17 +127,20 @@ func (h *DeploymentHandler) Execute(w http.ResponseWriter, r *http.Request) {
 
 	var deploymentID int64
 	err = tx.QueryRowContext(r.Context(), `
-		INSERT INTO deployments (project_id, environment_id, status, commit_message, created_by)
-		VALUES ($1, $2, 'succeeded', $3, $4)
+		INSERT INTO deployments (project_id, environment_id, project_version_id, status, commit_message, created_by)
+		VALUES ($1, $2, $3, 'succeeded', $4, $5)
 		RETURNING id
-	`, projectID, envID, req.CommitMessage, user.UserID).Scan(&deploymentID)
+	`, projectID, envID, req.ProjectVersionID, req.CommitMessage, user.UserID).Scan(&deploymentID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create deployment", "internal")
 		return
 	}
 
-	// Insert deployment entries (and their global-value refs).
-	if err := h.insertDeploymentEntries(r.Context(), tx, deploymentID, renderResults, req); err != nil {
+	if err := h.insertDeploymentEntries(r.Context(), tx, deploymentID, renderResults); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error(), "internal")
+		return
+	}
+	if err := h.insertDeploymentGroupRefs(r.Context(), tx, deploymentID, req.GroupVersionIDsRaw); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error(), "internal")
 		return
 	}
@@ -166,25 +150,17 @@ func (h *DeploymentHandler) Execute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build response
 	results := make([]models.TemplateRenderResult, len(renderResults))
 	for i, rr := range renderResults {
-		results[i] = models.TemplateRenderResult{
-			TemplateName:      rr.TemplateName,
-			RenderedOutput:    rr.RenderedOutput,
-			TemplateVersionID: req.TemplateVersions[rr.TemplateName],
-		}
+		results[i] = models.TemplateRenderResult{TemplateName: rr.TemplateName, RenderedOutput: rr.RenderedOutput}
 	}
-
 	writeJSON(w, http.StatusCreated, models.DeployResponse{
-		DeploymentID: deploymentID,
-		Status:       "succeeded",
-		Results:      results,
+		DeploymentID: deploymentID, Status: "succeeded", Results: results,
 	})
 }
 
-// GetLatest returns the version set from the last successful deployment
-// for a (project, environment) pair.
+// GetLatest returns the version set pinned by the most recent successful
+// deployment.
 func (h *DeploymentHandler) GetLatest(w http.ResponseWriter, r *http.Request) {
 	projectID, envID, ok := h.resolveProjectEnv(w, r)
 	if !ok {
@@ -193,11 +169,11 @@ func (h *DeploymentHandler) GetLatest(w http.ResponseWriter, r *http.Request) {
 
 	var dep models.Deployment
 	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT id, commit_message, created_at
+		SELECT id, project_version_id, commit_message, created_at
 		FROM deployments
 		WHERE project_id = $1 AND environment_id = $2 AND status = 'succeeded'
 		ORDER BY created_at DESC LIMIT 1
-	`, projectID, envID).Scan(&dep.ID, &dep.CommitMessage, &dep.CreatedAt)
+	`, projectID, envID).Scan(&dep.ID, &dep.ProjectVersionID, &dep.CommitMessage, &dep.CreatedAt)
 	if err == sql.ErrNoRows {
 		writeError(w, http.StatusNotFound, "no successful deployment found", "not_found")
 		return
@@ -207,97 +183,79 @@ func (h *DeploymentHandler) GetLatest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch template and values versions from deployment entries
-	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT template_name, template_version_id, values_version_id
-		FROM deployment_entries
-		WHERE deployment_id = $1
-	`, dep.ID)
+	groupVersions, err := h.loadDeploymentGroupVersions(r.Context(), dep.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return
-	}
-	defer rows.Close()
-
-	templateVersions := map[string]int{}
-	var valuesVersionID int
-	for rows.Next() {
-		var name string
-		var tmplVer, valsVer int
-		if err := rows.Scan(&name, &tmplVer, &valsVer); err != nil {
-			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
-			return
-		}
-		templateVersions[name] = tmplVer
-		valuesVersionID = valsVer
-	}
-
-	// Fetch global values versions from any entry's refs
-	gvRows, err := h.DB.QueryContext(r.Context(), `
-		SELECT DISTINCT degr.global_values_name, degr.global_values_version_id
-		FROM deployment_entry_global_refs degr
-		JOIN deployment_entries de ON de.id = degr.deployment_entry_id
-		WHERE de.deployment_id = $1
-	`, dep.ID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
-		return
-	}
-	defer gvRows.Close()
-
-	gvVersions := map[string]int{}
-	for gvRows.Next() {
-		var name string
-		var ver int
-		if err := gvRows.Scan(&name, &ver); err != nil {
-			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
-			return
-		}
-		gvVersions[name] = ver
 	}
 
 	writeJSON(w, http.StatusOK, models.LatestDeploymentResponse{
-		DeploymentID:         dep.ID,
-		TemplateVersions:     templateVersions,
-		ValuesVersionID:      valuesVersionID,
-		GlobalValuesVersions: gvVersions,
-		CreatedAt:            dep.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		CommitMessage:        dep.CommitMessage,
+		DeploymentID:     dep.ID,
+		ProjectVersionID: dep.ProjectVersionID,
+		GroupVersions:    groupVersions,
+		CreatedAt:        dep.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		CommitMessage:    dep.CommitMessage,
 	})
 }
 
 // --- helpers ---
 
-// insertDeploymentEntries writes a deployment_entries row per rendered
-// template plus its deployment_entry_global_refs rows. Extracted from Execute
-// to keep its cognitive complexity within Sonar's limit. Errors are wrapped
-// with a stable message so the caller can surface them as 500s.
-func (h *DeploymentHandler) insertDeploymentEntries(
-	ctx context.Context,
-	tx *sql.Tx,
-	deploymentID int64,
-	renderResults []services.RenderResult,
-	req models.DeployRequest,
-) error {
+func (h *DeploymentHandler) insertDeploymentEntries(ctx context.Context, tx *sql.Tx, deploymentID int64, renderResults []services.RenderResult) error {
 	for _, rr := range renderResults {
-		var entryID int64
-		if err := tx.QueryRowContext(ctx, `
-			INSERT INTO deployment_entries (deployment_id, template_name, template_version_id, values_version_id, rendered_output)
-			VALUES ($1, $2, $3, $4, $5)
-			RETURNING id
-		`, deploymentID, rr.TemplateName, req.TemplateVersions[rr.TemplateName], req.ValuesVersionID, *rr.RenderedOutput).Scan(&entryID); err != nil {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO deployment_entries (deployment_id, template_name, rendered_output)
+			VALUES ($1, $2, $3)
+		`, deploymentID, rr.TemplateName, *rr.RenderedOutput); err != nil {
 			return fmt.Errorf("failed to create deployment entry")
-		}
-		for gvName, gvVersion := range req.GlobalValuesVersions {
-			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO deployment_entry_global_refs (deployment_entry_id, global_values_name, global_values_version_id)
-				VALUES ($1, $2, $3)
-			`, entryID, gvName, gvVersion); err != nil {
-				return fmt.Errorf("failed to create global value ref")
-			}
 		}
 	}
 	return nil
+}
+
+func (h *DeploymentHandler) insertDeploymentGroupRefs(ctx context.Context, tx *sql.Tx, deploymentID int64, groupVersionsByName map[string]int) error {
+	for groupName, versionOrd := range groupVersionsByName {
+		var groupID, groupVersionID int64
+		err := tx.QueryRowContext(ctx, `
+			SELECT g.id, ggv.id
+			FROM global_values_groups g
+			JOIN global_values_group_versions ggv ON ggv.group_id = g.id AND ggv.version_id = $2
+			WHERE g.name = $1
+		`, groupName, versionOrd).Scan(&groupID, &groupVersionID)
+		if err != nil {
+			return fmt.Errorf("group %q version %d not found", groupName, versionOrd)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO deployment_group_refs (deployment_id, group_id, group_version_id)
+			VALUES ($1, $2, $3)
+		`, deploymentID, groupID, groupVersionID); err != nil {
+			return fmt.Errorf("failed to create deployment group ref")
+		}
+	}
+	return nil
+}
+
+func (h *DeploymentHandler) loadDeploymentGroupVersions(ctx context.Context, deploymentID int64) (map[string]int, error) {
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT g.name, ggv.version_id
+		FROM deployment_group_refs dgr
+		JOIN global_values_groups g ON g.id = dgr.group_id
+		JOIN global_values_group_versions ggv ON ggv.id = dgr.group_version_id
+		WHERE dgr.deployment_id = $1
+	`, deploymentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var name string
+		var ord int
+		if err := rows.Scan(&name, &ord); err != nil {
+			return nil, err
+		}
+		out[name] = ord
+	}
+	return out, rows.Err()
 }
 
 func (h *DeploymentHandler) resolveProjectEnv(w http.ResponseWriter, r *http.Request) (int64, int64, bool) {
@@ -321,43 +279,54 @@ func (h *DeploymentHandler) resolveProjectEnv(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 		return 0, 0, false
 	}
-
 	return projectID, envID, true
 }
 
-func (h *DeploymentHandler) fetchPinnedTemplates(w http.ResponseWriter, r *http.Request, projectID int64, versions map[string]int) ([]services.TemplateInput, map[string]string, bool) {
-	templates := make([]services.TemplateInput, 0, len(versions))
-	bodies := make(map[string]string, len(versions))
+// fetchPinnedTemplates returns every template snapshotted by the project
+// version. The set is fixed by the snapshot — callers do not get to pick a
+// subset.
+func (h *DeploymentHandler) fetchPinnedTemplates(w http.ResponseWriter, r *http.Request, projectID, projectVersionID int64) ([]services.TemplateInput, map[string]string, bool) {
+	if err := h.assertProjectVersionBelongsToProject(r.Context(), projectID, projectVersionID); err != nil {
+		writeError(w, http.StatusNotFound, "project version not found for project", "not_found")
+		return nil, nil, false
+	}
+	rows, err := h.DB.QueryContext(r.Context(), `
+		SELECT pvt.template_name, t.body
+		FROM project_version_templates pvt
+		JOIN project_config_templates t ON t.id = pvt.template_row_id
+		WHERE pvt.project_version_id = $1
+	`, projectVersionID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
+		return nil, nil, false
+	}
+	defer rows.Close()
 
-	for name, ver := range versions {
-		var body string
-		err := h.DB.QueryRowContext(r.Context(), `
-			SELECT body FROM project_config_templates
-			WHERE project_id = $1 AND template_name = $2 AND version_id = $3
-		`, projectID, name, ver).Scan(&body)
-		if err == sql.ErrNoRows {
-			writeError(w, http.StatusNotFound, "template "+name+" version not found", "not_found")
-			return nil, nil, false
-		}
-		if err != nil {
+	templates := []services.TemplateInput{}
+	bodies := map[string]string{}
+	for rows.Next() {
+		var name, body string
+		if err := rows.Scan(&name, &body); err != nil {
 			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return nil, nil, false
 		}
 		templates = append(templates, services.TemplateInput{Name: name, Body: body})
 		bodies[name] = body
 	}
-
 	return templates, bodies, true
 }
 
-func (h *DeploymentHandler) fetchPinnedValues(w http.ResponseWriter, r *http.Request, projectID, envID int64, versionID int) (json.RawMessage, bool) {
+func (h *DeploymentHandler) fetchPinnedValues(w http.ResponseWriter, r *http.Request, projectID, envID, projectVersionID int64) (json.RawMessage, bool) {
 	var payload json.RawMessage
 	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT payload FROM project_config_values
-		WHERE project_id = $1 AND environment_id = $2 AND version_id = $3
-	`, projectID, envID, versionID).Scan(&payload)
+		SELECT v.payload
+		FROM project_version_values pvv
+		JOIN project_config_values v ON v.id = pvv.values_row_id
+		JOIN project_versions pv ON pv.id = pvv.project_version_id
+		WHERE pv.id = $1 AND pv.project_id = $2 AND pvv.environment_id = $3
+	`, projectVersionID, projectID, envID).Scan(&payload)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "values version not found", "not_found")
+		writeError(w, http.StatusNotFound, "values not found at project version for this environment", "not_found")
 		return nil, false
 	}
 	if err != nil {
@@ -367,36 +336,71 @@ func (h *DeploymentHandler) fetchPinnedValues(w http.ResponseWriter, r *http.Req
 	return payload, true
 }
 
-func (h *DeploymentHandler) fetchPinnedGlobalValues(w http.ResponseWriter, r *http.Request, versions map[string]int) (map[string]map[string]any, map[string]json.RawMessage, bool) {
-	gvMap := make(map[string]map[string]any, len(versions))
-	gvPayloads := make(map[string]json.RawMessage, len(versions))
+func (h *DeploymentHandler) fetchPinnedGlobalValues(w http.ResponseWriter, r *http.Request, groupVersionsByName map[string]int) (map[string]map[string]any, map[string]json.RawMessage, bool) {
+	gvMap := make(map[string]map[string]any)
+	gvPayloads := make(map[string]json.RawMessage)
 
-	for name, ver := range versions {
-		var payload json.RawMessage
-		err := h.DB.QueryRowContext(r.Context(), `
-			SELECT payload FROM global_values
-			WHERE name = $1 AND version_id = $2
-		`, name, ver).Scan(&payload)
-		if err == sql.ErrNoRows {
-			writeError(w, http.StatusNotFound, "global values "+name+" version not found", "not_found")
-			return nil, nil, false
-		}
+	for groupName, versionOrd := range groupVersionsByName {
+		rows, err := h.DB.QueryContext(r.Context(), `
+			SELECT gv.name, gv.payload
+			FROM global_values_groups g
+			JOIN global_values_group_versions ggv ON ggv.group_id = g.id
+			JOIN global_values_group_version_entries e ON e.group_version_id = ggv.id
+			JOIN global_values gv ON gv.id = e.gv_row_id
+			WHERE g.name = $1 AND ggv.version_id = $2
+		`, groupName, versionOrd)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
 			return nil, nil, false
 		}
-
-		var flat map[string]any
-		if err := json.Unmarshal(payload, &flat); err != nil {
-			writeError(w, http.StatusInternalServerError, "invalid global values payload", "internal")
+		flat := map[string]any{}
+		groupPayload := map[string]any{}
+		any_ := false
+		for rows.Next() {
+			var name string
+			var payload json.RawMessage
+			if err := rows.Scan(&name, &payload); err != nil {
+				rows.Close()
+				writeError(w, http.StatusInternalServerError, msgDatabaseError, "internal")
+				return nil, nil, false
+			}
+			var parsed map[string]any
+			if err := json.Unmarshal(payload, &parsed); err != nil {
+				rows.Close()
+				writeError(w, http.StatusInternalServerError, "invalid global values payload", "internal")
+				return nil, nil, false
+			}
+			for k, v := range parsed {
+				flat[k] = v
+			}
+			groupPayload[name] = parsed
+			any_ = true
+		}
+		rows.Close()
+		if !any_ {
+			writeError(w, http.StatusNotFound, "global values group "+groupName+" version not found", "not_found")
 			return nil, nil, false
 		}
-
-		gvMap[name] = flat
-		gvPayloads[name] = payload
+		gvMap[groupName] = flat
+		bs, _ := json.Marshal(groupPayload)
+		gvPayloads[groupName] = bs
 	}
 
 	return gvMap, gvPayloads, true
+}
+
+func (h *DeploymentHandler) assertProjectVersionBelongsToProject(ctx context.Context, projectID, projectVersionID int64) error {
+	var ok bool
+	err := h.DB.QueryRowContext(ctx, `
+		SELECT EXISTS(SELECT 1 FROM project_versions WHERE id = $1 AND project_id = $2)
+	`, projectVersionID, projectID).Scan(&ok)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 type prevTemplateData struct {
@@ -405,65 +409,56 @@ type prevTemplateData struct {
 }
 
 func (h *DeploymentHandler) fetchLastDeploymentBaseline(r *http.Request, projectID, envID int64) (map[string]*prevTemplateData, *json.RawMessage, map[string]json.RawMessage) {
-	// Find last successful deployment
-	var depID int64
+	var depID, prevPVID int64
 	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT id FROM deployments
+		SELECT id, project_version_id FROM deployments
 		WHERE project_id = $1 AND environment_id = $2 AND status = 'succeeded'
 		ORDER BY created_at DESC LIMIT 1
-	`, projectID, envID).Scan(&depID)
+	`, projectID, envID).Scan(&depID, &prevPVID)
 	if err != nil {
 		return nil, nil, nil
 	}
 
-	// Fetch entries
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT de.template_name, de.rendered_output, de.values_version_id, pct.body
+		SELECT de.template_name, de.rendered_output, t.body
 		FROM deployment_entries de
-		LEFT JOIN project_config_templates pct
-			ON pct.project_id = $2 AND pct.template_name = de.template_name AND pct.version_id = de.template_version_id
+		LEFT JOIN project_version_templates pvt ON pvt.project_version_id = $2 AND pvt.template_name = de.template_name
+		LEFT JOIN project_config_templates t ON t.id = pvt.template_row_id
 		WHERE de.deployment_id = $1
-	`, depID, projectID)
+	`, depID, prevPVID)
 	if err != nil {
 		return nil, nil, nil
 	}
 	defer rows.Close()
 
 	prevTemplates := map[string]*prevTemplateData{}
-	var prevValuesVersionID int
 	for rows.Next() {
 		var name, rendered string
-		var valsVer int
 		var body *string
-		if err := rows.Scan(&name, &rendered, &valsVer, &body); err != nil {
+		if err := rows.Scan(&name, &rendered, &body); err != nil {
 			continue
 		}
-		prevTemplates[name] = &prevTemplateData{
-			RenderedOutput: &rendered,
-			TemplateBody:   body,
-		}
-		prevValuesVersionID = valsVer
+		prevTemplates[name] = &prevTemplateData{RenderedOutput: &rendered, TemplateBody: body}
 	}
 
-	// Fetch previous values payload
 	var prevValues *json.RawMessage
-	if prevValuesVersionID > 0 {
-		var payload json.RawMessage
-		err = h.DB.QueryRowContext(r.Context(), `
-			SELECT payload FROM project_config_values
-			WHERE project_id = $1 AND environment_id = $2 AND version_id = $3
-		`, projectID, envID, prevValuesVersionID).Scan(&payload)
-		if err == nil {
-			prevValues = &payload
-		}
+	var payload json.RawMessage
+	err = h.DB.QueryRowContext(r.Context(), `
+		SELECT v.payload
+		FROM project_version_values pvv
+		JOIN project_config_values v ON v.id = pvv.values_row_id
+		WHERE pvv.project_version_id = $1 AND pvv.environment_id = $2
+	`, prevPVID, envID).Scan(&payload)
+	if err == nil {
+		prevValues = &payload
 	}
 
-	// Fetch previous global values
 	gvRows, err := h.DB.QueryContext(r.Context(), `
-		SELECT DISTINCT degr.global_values_name, degr.global_values_version_id
-		FROM deployment_entry_global_refs degr
-		JOIN deployment_entries de ON de.id = degr.deployment_entry_id
-		WHERE de.deployment_id = $1
+		SELECT g.name, ggv.id
+		FROM deployment_group_refs dgr
+		JOIN global_values_groups g ON g.id = dgr.group_id
+		JOIN global_values_group_versions ggv ON ggv.id = dgr.group_version_id
+		WHERE dgr.deployment_id = $1
 	`, depID)
 	if err != nil {
 		return prevTemplates, prevValues, nil
@@ -472,17 +467,21 @@ func (h *DeploymentHandler) fetchLastDeploymentBaseline(r *http.Request, project
 
 	prevGlobalValues := map[string]json.RawMessage{}
 	for gvRows.Next() {
-		var name string
-		var ver int
-		if err := gvRows.Scan(&name, &ver); err != nil {
+		var groupName string
+		var groupVersionID int64
+		if err := gvRows.Scan(&groupName, &groupVersionID); err != nil {
 			continue
 		}
-		var payload json.RawMessage
-		err = h.DB.QueryRowContext(r.Context(), `
-			SELECT payload FROM global_values WHERE name = $1 AND version_id = $2
-		`, name, ver).Scan(&payload)
+		values, err := loadGroupVersionValues(r.Context(), h.DB, groupVersionID)
 		if err == nil {
-			prevGlobalValues[name] = payload
+			groupPayload := map[string]any{}
+			for name, payload := range values {
+				var parsed any
+				_ = json.Unmarshal(payload, &parsed)
+				groupPayload[name] = parsed
+			}
+			bs, _ := json.Marshal(groupPayload)
+			prevGlobalValues[groupName] = bs
 		}
 	}
 

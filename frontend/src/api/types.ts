@@ -108,18 +108,64 @@ export interface ProjectConfigValues {
 // `range` over it). See GlobalValueValue for the shared union.
 export type GlobalValueValue = string | number | boolean | null | string[]
 
+// A single immutable global-values content row inside a group.
 export interface GlobalValues {
   id: number
+  group_id: number
   name: string
-  version_id: number
   payload: Record<string, GlobalValueValue>
   commit_message: string | null
+  created_by: number
+  created_at: string
+}
+
+// A named bundle of global values. Versioning lives on the group, not on
+// individual values.
+export interface GlobalValuesGroup {
+  id: number
+  name: string
   approval_condition: string
   created_by: number
   created_at: string
-  // Present on the detail (GetLatest) response: whether the caller holds grant
-  // on the entry and may edit its approval policy.
-  viewer_can_manage?: boolean
+}
+
+// One snapshot in a group's version history. `values` is the materialized
+// (gv_name -> payload) map at this version.
+export interface GlobalValuesGroupVersion {
+  id: number
+  group_id: number
+  group_name: string
+  version_id: number
+  parent_version_id: number | null
+  commit_message: string | null
+  created_by: number
+  created_at: string
+  values?: Record<string, Record<string, GlobalValueValue>>
+}
+
+// GetLatest response shape: group + latest materialized version + management flag.
+export interface GlobalValuesGroupDetailResponse {
+  group: GlobalValuesGroup
+  latest_version: GlobalValuesGroupVersion
+  viewer_can_manage: boolean
+}
+
+// A per-project version snapshot listing entry. Each project version covers
+// every template and every env values payload at that point in time.
+export interface ProjectVersion {
+  id: number
+  project_id: number
+  version_id: number
+  parent_version_id: number | null
+  commit_message: string | null
+  is_anchor: boolean
+  created_by: number
+  created_at: string
+}
+
+export interface ProjectVersionManifest extends ProjectVersion {
+  templates: ProjectConfigTemplate[]
+  values: ProjectConfigValues[]
 }
 
 // Role is a global, named bundle of permission atoms. Its scope comes only from
@@ -211,15 +257,18 @@ export interface AppendProjectConfigValuesVersionRequest {
   commit_message?: string
 }
 
-export interface CreateGlobalValuesRequest {
+// Create a new group with its v1 snapshot — values is a (gv_name -> payload) map.
+export interface CreateGlobalValuesGroupRequest {
   name: string
-  payload: Record<string, GlobalValueValue>
+  values: Record<string, Record<string, GlobalValueValue>>
   commit_message?: string
   approval_condition?: string
 }
 
-export interface AppendGlobalValuesVersionRequest {
-  payload: Record<string, GlobalValueValue>
+// Append a new group version. values is the new (gv_name -> payload) map; any
+// entry that matches the previous version's payload reuses the same content row.
+export interface AppendGlobalValuesGroupVersionRequest {
+  values: Record<string, Record<string, GlobalValueValue>>
   commit_message?: string
 }
 
@@ -228,6 +277,10 @@ export interface PullRequest {
   id: number
   project_id: number | null
   global_values_name: string | null
+  // Snapshot the PR was authored against. Conflict detection at merge compares
+  // these against the project's / group's current latest version.
+  base_project_version_id: number | null
+  base_group_version_id: number | null
   author_id: number
   title: string
   description: string | null
@@ -259,7 +312,6 @@ export interface PRChange {
   template_name: string | null
   environment_name: string | null
   global_values_name: string | null
-  base_version_id: number
   proposed_payload: string
   created_at: string
 }
@@ -303,10 +355,13 @@ export interface WorkspaceValidationResponse {
 }
 
 // Deployment types
+//
+// Pin a single project_version_id (everything in the project — templates and
+// envs — comes from this snapshot) plus one group version per referenced
+// global-values group.
 export interface DeployPreviewRequest {
-  template_versions: Record<string, number>
-  values_version_id: number
-  global_values_versions: Record<string, number>
+  project_version_id: number
+  global_values_group_versions: Record<string, number>
 }
 
 export interface DeployRequest extends DeployPreviewRequest {
@@ -321,17 +376,16 @@ export interface TemplateRenderResult {
   previous_output?: string
   template_body: string
   previous_template_body?: string
-  template_version_id: number
 }
 
 export interface DeployPreviewResponse {
   results: TemplateRenderResult[]
   values_payload: Record<string, unknown>
   previous_values?: Record<string, unknown>
-  values_version_id: number
+  project_version_id: number
   global_values: Record<string, Record<string, unknown>>
   previous_global_values?: Record<string, Record<string, unknown>>
-  global_values_versions: Record<string, number>
+  global_values_group_versions: Record<string, number>
   has_errors: boolean
 }
 
@@ -343,9 +397,8 @@ export interface DeployResponse {
 
 export interface LatestDeploymentResponse {
   deployment_id: number
-  template_versions: Record<string, number>
-  values_version_id: number
-  global_values_versions: Record<string, number>
+  project_version_id: number
+  global_values_group_versions: Record<string, number>
   created_at: string
   commit_message?: string
 }

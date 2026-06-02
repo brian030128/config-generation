@@ -181,11 +181,19 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 					// project admin (grant).
 					r.With(perm(db, "grant", "", param("projectName"), nil, nil)).
 						Put("/approval-condition", proj.UpdateApprovalCondition)
+
+					// --- Project version history & manifest ---
+					r.Route(pathVersions, func(r chi.Router) {
+						r.With(perm(db, "read", "project", param("projectName"), nil, nil)).
+							Get("/", proj.ListVersions)
+						r.With(perm(db, "read", "project", param("projectName"), nil, nil)).
+							Get(pathVersionID, proj.GetVersion)
+					})
 				})
 			})
 
-			// --- Global Values ---
-			r.Route("/global-values", func(r chi.Router) {
+			// --- Global Values Groups ---
+			r.Route("/global-values-groups", func(r chi.Router) {
 				r.Get("/", gv.List)
 				r.Post("/", gv.Create)
 
@@ -202,7 +210,7 @@ func NewRouterWithAuthConfig(db *sql.DB, authConfig AuthConfig) chi.Router {
 							Get(pathVersionID, gv.GetVersion)
 					})
 
-					// --- Approval condition (global values scoped) ---
+					// --- Approval condition (group-scoped) ---
 					r.With(perm(db, "grant", "global_values", nil, nil, param("name"))).
 						Put("/approval-condition", gv.UpdateApprovalCondition)
 				})

@@ -109,7 +109,7 @@ var _ = Describe("Workspace Workflow (all changes through PR)", func() {
 			Expect(decode[map[string]any](rec)["changes"].([]any)).To(HaveLen(2))
 		})
 
-		It("sets base_version_id to 0 for values of a draft environment", func() {
+		It("stages values for a draft environment without a per-change base", func() {
 			doRequest("POST", "/api/workspace/my-service/environments", map[string]any{"name": "staging"}, aliceID, "alice")
 
 			rec := doRequest("PUT", "/api/workspace/my-service/envs/staging/values", map[string]any{
@@ -120,7 +120,9 @@ var _ = Describe("Workspace Workflow (all changes through PR)", func() {
 			for _, c := range decode[map[string]any](rec)["changes"].([]any) {
 				change := c.(map[string]any)
 				if change["object_type"] == "values" {
-					Expect(change["base_version_id"]).To(BeEquivalentTo(0))
+					// Per-change base_version_id is gone; conflict detection is
+					// PR-level via base_project_version_id.
+					Expect(change).NotTo(HaveKey("base_version_id"))
 				}
 			}
 		})
@@ -131,7 +133,7 @@ var _ = Describe("Workspace Workflow (all changes through PR)", func() {
 			createEnvironment(aliceID, "alice", "my-service", "staging")
 		})
 
-		It("stages a new value set (base version 0)", func() {
+		It("stages a new value set (create operation)", func() {
 			rec := doRequest("PUT", "/api/workspace/my-service/envs/staging/values", map[string]any{
 				"payload": map[string]any{"key": "val"},
 			}, aliceID, "alice")
@@ -140,10 +142,9 @@ var _ = Describe("Workspace Workflow (all changes through PR)", func() {
 			change := decode[map[string]any](rec)["changes"].([]any)[0].(map[string]any)
 			Expect(change["environment_name"]).To(Equal("staging"))
 			Expect(change["operation"]).To(Equal("create"))
-			Expect(change["base_version_id"]).To(BeEquivalentTo(0))
 		})
 
-		It("stages an edit to an existing value set with the correct base version", func() {
+		It("stages an edit to an existing value set as an update operation", func() {
 			seedValues(aliceID, "my-service", "staging", map[string]any{"key": "v1"})
 
 			rec := doRequest("PUT", "/api/workspace/my-service/envs/staging/values", map[string]any{
@@ -153,7 +154,6 @@ var _ = Describe("Workspace Workflow (all changes through PR)", func() {
 
 			change := decode[map[string]any](rec)["changes"].([]any)[0].(map[string]any)
 			Expect(change["operation"]).To(Equal("update"))
-			Expect(change["base_version_id"]).To(BeEquivalentTo(1))
 		})
 	})
 

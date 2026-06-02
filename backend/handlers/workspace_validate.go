@@ -187,26 +187,48 @@ func (h *PullRequestHandler) validateWorkspace(ctx context.Context, projectID, u
 }
 
 // latestGlobalValuesMap loads the latest live version of each named global
-// values entry into the map shape RenderAll expects. Missing or malformed
-// entries are left out so RenderAll reports them as unresolved references.
+// values group into the flat map shape RenderAll expects: every value entry
+// in the group is merged into one map. Missing or malformed groups are left
+// out so RenderAll reports them as unresolved references.
 func (h *PullRequestHandler) latestGlobalValuesMap(ctx context.Context, names []string) (map[string]map[string]any, error) {
 	gvMap := make(map[string]map[string]any, len(names))
 	for _, name := range names {
-		var payload json.RawMessage
-		err := h.DB.QueryRowContext(ctx, `
-			SELECT payload FROM global_values WHERE name = $1 ORDER BY version_id DESC LIMIT 1
-		`, name).Scan(&payload)
-		if err == sql.ErrNoRows {
-			continue
-		}
+		rows, err := h.DB.QueryContext(ctx, `
+			SELECT gv.payload
+			FROM global_values_groups g
+			JOIN global_values_group_versions ggv ON ggv.group_id = g.id
+			JOIN global_values_group_version_entries e ON e.group_version_id = ggv.id
+			JOIN global_values gv ON gv.id = e.gv_row_id
+			WHERE g.name = $1
+			  AND ggv.id = (
+			      SELECT id FROM global_values_group_versions
+			      WHERE group_id = g.id ORDER BY version_id DESC LIMIT 1
+			  )
+		`, name)
 		if err != nil {
 			return nil, err
 		}
-		var flat map[string]any
-		if err := json.Unmarshal(payload, &flat); err != nil {
-			continue
+		flat := map[string]any{}
+		found := false
+		for rows.Next() {
+			var payload json.RawMessage
+			if err := rows.Scan(&payload); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			var parsed map[string]any
+			if err := json.Unmarshal(payload, &parsed); err != nil {
+				continue
+			}
+			for k, v := range parsed {
+				flat[k] = v
+			}
+			found = true
 		}
-		gvMap[name] = flat
+		rows.Close()
+		if found {
+			gvMap[name] = flat
+		}
 	}
 	return gvMap, nil
 }

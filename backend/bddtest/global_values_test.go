@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Global Values", func() {
+var _ = Describe("Global Values Groups", func() {
 	var aliceID int64
 
 	BeforeEach(func() {
@@ -15,91 +15,98 @@ var _ = Describe("Global Values", func() {
 		aliceID = seedUser("alice", "Alice Smith")
 	})
 
-	Context("creating a global values entry", func() {
-		It("returns 201 with version_id=1 using the doc example test_db_values", func() {
-			rec := doRequest("POST", "/api/global-values", map[string]any{
+	Context("creating a global values group", func() {
+		It("returns 201 with v1 and the values map for the doc example", func() {
+			rec := doRequest("POST", "/api/global-values-groups", map[string]any{
 				"name": "test_db_values",
-				"payload": map[string]any{
-					"host":     "test-db.internal",
-					"port":     5432,
-					"username": "app",
-					"password": "s3cret",
+				"values": map[string]any{
+					"test_db_values": map[string]any{
+						"host":     "test-db.internal",
+						"port":     5432,
+						"username": "app",
+						"password": "s3cret",
+					},
 				},
 				"commit_message": "Initial DB values",
 			}, aliceID, "alice")
 
 			Expect(rec.Code).To(Equal(http.StatusCreated))
 			body := decode[map[string]any](rec)
-			Expect(body["name"]).To(Equal("test_db_values"))
-			Expect(body["version_id"]).To(BeEquivalentTo(1))
+			group := body["group"].(map[string]any)
+			Expect(group["name"]).To(Equal("test_db_values"))
 
-			payload := body["payload"].(map[string]any)
-			Expect(payload["host"]).To(Equal("test-db.internal"))
-			Expect(payload["port"]).To(BeEquivalentTo(5432))
-			Expect(payload["username"]).To(Equal("app"))
-			Expect(payload["password"]).To(Equal("s3cret"))
+			latest := body["latest_version"].(map[string]any)
+			Expect(latest["version_id"]).To(BeEquivalentTo(1))
+			values := latest["values"].(map[string]any)
+			entry := values["test_db_values"].(map[string]any)
+			Expect(entry["host"]).To(Equal("test-db.internal"))
+			Expect(entry["port"]).To(BeEquivalentTo(5432))
 		})
 
 		It("rejects nested objects (flat-only constraint)", func() {
-			rec := doRequest("POST", "/api/global-values", map[string]any{
+			rec := doRequest("POST", "/api/global-values-groups", map[string]any{
 				"name": "bad_values",
-				"payload": map[string]any{
-					"nested": map[string]any{"a": 1},
+				"values": map[string]any{
+					"bad_values": map[string]any{
+						"nested": map[string]any{"a": 1},
+					},
 				},
 			}, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusBadRequest))
 		})
 
 		It("accepts a list of strings", func() {
-			rec := doRequest("POST", "/api/global-values", map[string]any{
+			rec := doRequest("POST", "/api/global-values-groups", map[string]any{
 				"name": "net_values",
-				"payload": map[string]any{
-					"hosts": []string{"a.internal", "b.internal"},
+				"values": map[string]any{
+					"net_values": map[string]any{
+						"hosts": []string{"a.internal", "b.internal"},
+					},
 				},
 			}, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusCreated))
-
-			body := decode[map[string]any](rec)
-			payload := body["payload"].(map[string]any)
-			Expect(payload["hosts"]).To(Equal([]any{"a.internal", "b.internal"}))
 		})
 
 		It("rejects a list containing non-strings", func() {
-			rec := doRequest("POST", "/api/global-values", map[string]any{
+			rec := doRequest("POST", "/api/global-values-groups", map[string]any{
 				"name": "bad_values",
-				"payload": map[string]any{
-					"ports": []any{80, 443},
+				"values": map[string]any{
+					"bad_values": map[string]any{
+						"ports": []any{80, 443},
+					},
 				},
 			}, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusBadRequest))
 		})
 
-		It("rejects duplicate names with 409", func() {
+		It("rejects duplicate group names with 409", func() {
 			createGlobalValues(aliceID, "alice", "test_db_values", map[string]any{"host": "db.internal"})
 
-			rec := doRequest("POST", "/api/global-values", map[string]any{
-				"name":    "test_db_values",
-				"payload": map[string]any{"host": "other"},
+			rec := doRequest("POST", "/api/global-values-groups", map[string]any{
+				"name": "test_db_values",
+				"values": map[string]any{
+					"test_db_values": map[string]any{"host": "other"},
+				},
 			}, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusConflict))
 		})
 
 		It("rejects missing name with 400", func() {
-			rec := doRequest("POST", "/api/global-values", map[string]any{
-				"payload": map[string]any{"host": "db"},
+			rec := doRequest("POST", "/api/global-values-groups", map[string]any{
+				"values": map[string]any{"x": map[string]any{"host": "db"}},
 			}, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusBadRequest))
 		})
 
-		It("rejects missing payload with 400", func() {
-			rec := doRequest("POST", "/api/global-values", map[string]any{
+		It("rejects missing values map with 400", func() {
+			rec := doRequest("POST", "/api/global-values-groups", map[string]any{
 				"name": "test",
 			}, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusBadRequest))
 		})
 	})
 
-	Context("appending versions", func() {
+	Context("appending group versions", func() {
 		BeforeEach(func() {
 			createGlobalValues(aliceID, "alice", "test_db_values", map[string]any{
 				"host": "test-db.internal",
@@ -109,10 +116,12 @@ var _ = Describe("Global Values", func() {
 		})
 
 		It("creates version 2 with updated payload", func() {
-			rec := doRequest("POST", "/api/global-values/test_db_values/versions", map[string]any{
-				"payload": map[string]any{
-					"host": "new-db.internal",
-					"port": 5433,
+			rec := doRequest("POST", "/api/global-values-groups/test_db_values/versions", map[string]any{
+				"values": map[string]any{
+					"test_db_values": map[string]any{
+						"host": "new-db.internal",
+						"port": 5433,
+					},
 				},
 				"commit_message": "Update DB host",
 			}, aliceID, "alice")
@@ -120,42 +129,49 @@ var _ = Describe("Global Values", func() {
 			Expect(rec.Code).To(Equal(http.StatusCreated))
 			body := decode[map[string]any](rec)
 			Expect(body["version_id"]).To(BeEquivalentTo(2))
-			payload := body["payload"].(map[string]any)
-			Expect(payload["host"]).To(Equal("new-db.internal"))
+			values := body["values"].(map[string]any)
+			entry := values["test_db_values"].(map[string]any)
+			Expect(entry["host"]).To(Equal("new-db.internal"))
 		})
 
 		It("preserves version 1 immutably", func() {
-			doRequest("POST", "/api/global-values/test_db_values/versions", map[string]any{
-				"payload": map[string]any{"host": "new-db.internal", "port": 5433},
+			doRequest("POST", "/api/global-values-groups/test_db_values/versions", map[string]any{
+				"values": map[string]any{
+					"test_db_values": map[string]any{"host": "new-db.internal", "port": 5433},
+				},
 			}, aliceID, "alice")
 
-			rec := doRequest("GET", "/api/global-values/test_db_values/versions/1", nil, aliceID, "alice")
+			rec := doRequest("GET", "/api/global-values-groups/test_db_values/versions/1", nil, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			body := decode[map[string]any](rec)
-			payload := body["payload"].(map[string]any)
-			Expect(payload["host"]).To(Equal("test-db.internal"))
+			values := body["values"].(map[string]any)
+			entry := values["test_db_values"].(map[string]any)
+			Expect(entry["host"]).To(Equal("test-db.internal"))
 		})
 
 		It("returns the latest version by default", func() {
-			doRequest("POST", "/api/global-values/test_db_values/versions", map[string]any{
-				"payload": map[string]any{"host": "new-db.internal", "port": 5433},
+			doRequest("POST", "/api/global-values-groups/test_db_values/versions", map[string]any{
+				"values": map[string]any{
+					"test_db_values": map[string]any{"host": "new-db.internal", "port": 5433},
+				},
 			}, aliceID, "alice")
 
-			rec := doRequest("GET", "/api/global-values/test_db_values", nil, aliceID, "alice")
+			rec := doRequest("GET", "/api/global-values-groups/test_db_values", nil, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			body := decode[map[string]any](rec)
-			Expect(body["version_id"]).To(BeEquivalentTo(2))
+			latest := body["latest_version"].(map[string]any)
+			Expect(latest["version_id"]).To(BeEquivalentTo(2))
 		})
 
-		It("lists all versions in descending order", func() {
-			doRequest("POST", "/api/global-values/test_db_values/versions", map[string]any{
-				"payload": map[string]any{"host": "v2", "port": 1},
+		It("lists all group versions in descending order", func() {
+			doRequest("POST", "/api/global-values-groups/test_db_values/versions", map[string]any{
+				"values": map[string]any{"test_db_values": map[string]any{"host": "v2", "port": 1}},
 			}, aliceID, "alice")
-			doRequest("POST", "/api/global-values/test_db_values/versions", map[string]any{
-				"payload": map[string]any{"host": "v3", "port": 2},
+			doRequest("POST", "/api/global-values-groups/test_db_values/versions", map[string]any{
+				"values": map[string]any{"test_db_values": map[string]any{"host": "v3", "port": 2}},
 			}, aliceID, "alice")
 
-			rec := doRequest("GET", "/api/global-values/test_db_values/versions", nil, aliceID, "alice")
+			rec := doRequest("GET", "/api/global-values-groups/test_db_values/versions", nil, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			body := decode[map[string]any](rec)
 			Expect(body["count"]).To(BeEquivalentTo(3))
@@ -166,26 +182,28 @@ var _ = Describe("Global Values", func() {
 		})
 
 		It("rejects nested objects on version append", func() {
-			rec := doRequest("POST", "/api/global-values/test_db_values/versions", map[string]any{
-				"payload": map[string]any{"nested": map[string]any{"a": 1}},
+			rec := doRequest("POST", "/api/global-values-groups/test_db_values/versions", map[string]any{
+				"values": map[string]any{
+					"test_db_values": map[string]any{"nested": map[string]any{"a": 1}},
+				},
 			}, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusBadRequest))
 		})
 	})
 
-	Context("listing global values", func() {
-		It("returns the latest version of each entry", func() {
+	Context("listing groups", func() {
+		It("returns each group with its latest metadata", func() {
 			createGlobalValues(aliceID, "alice", "test_db_values", map[string]any{"host": "db1"})
 			createGlobalValues(aliceID, "alice", "shared_secrets", map[string]any{"api_key": "abc"})
 
-			rec := doRequest("GET", "/api/global-values", nil, aliceID, "alice")
+			rec := doRequest("GET", "/api/global-values-groups", nil, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			body := decode[map[string]any](rec)
 			Expect(body["count"]).To(BeEquivalentTo(2))
 		})
 
 		It("returns empty list when none exist", func() {
-			rec := doRequest("GET", "/api/global-values", nil, aliceID, "alice")
+			rec := doRequest("GET", "/api/global-values-groups", nil, aliceID, "alice")
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			body := decode[map[string]any](rec)
 			Expect(body["count"]).To(BeEquivalentTo(0))

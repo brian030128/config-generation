@@ -1,8 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { globalValuesApi } from "@/api/global-values"
 import type {
-  CreateGlobalValuesRequest,
-  AppendGlobalValuesVersionRequest,
+  CreateGlobalValuesGroupRequest,
+  AppendGlobalValuesGroupVersionRequest,
 } from "@/api/types"
 
 export const globalValuesKeys = {
@@ -37,7 +37,7 @@ export function useGlobalValueVersions(name: string) {
 export function useCreateGlobalValues() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (req: CreateGlobalValuesRequest) =>
+    mutationFn: (req: CreateGlobalValuesGroupRequest) =>
       globalValuesApi.create(req),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: globalValuesKeys.all }),
@@ -47,7 +47,7 @@ export function useCreateGlobalValues() {
 export function useAppendGlobalValueVersion(name: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (req: AppendGlobalValuesVersionRequest) =>
+    mutationFn: (req: AppendGlobalValuesGroupVersionRequest) =>
       globalValuesApi.appendVersion(name, req),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: globalValuesKeys.all })

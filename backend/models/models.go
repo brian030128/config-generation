@@ -51,6 +51,11 @@ type EnvAdmin struct {
 	GrantedAt   time.Time `json:"granted_at"`
 }
 
+// ProjectConfigTemplate is an immutable content row holding one template body.
+// Authoritative versioning is per project (see ProjectVersion); VersionID is a
+// monotonic per-(project, template_name) counter for traceability and as a
+// convenience for clients that want a "this is the Nth time this template
+// changed" identifier without consulting the snapshot tables.
 type ProjectConfigTemplate struct {
 	ID            int64     `json:"id"`
 	ProjectID     int64     `json:"project_id"`
@@ -62,6 +67,9 @@ type ProjectConfigTemplate struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
+// ProjectConfigValues is an immutable content row for one (project, env)
+// values payload. VersionID is a per-(project, env) monotonic counter, same
+// semantics as ProjectConfigTemplate.VersionID.
 type ProjectConfigValues struct {
 	ID            int64           `json:"id"`
 	ProjectID     int64           `json:"project_id"`
@@ -73,15 +81,61 @@ type ProjectConfigValues struct {
 	CreatedAt     time.Time       `json:"created_at"`
 }
 
+// GlobalValues is an immutable content row for one global value inside a group.
+// Versioning lives on the owning group (see GlobalValuesGroupVersion).
 type GlobalValues struct {
-	ID                int64           `json:"id"`
-	Name              string          `json:"name"`
-	VersionID         int             `json:"version_id"`
-	Payload           json.RawMessage `json:"payload"`
-	CommitMessage     *string         `json:"commit_message"`
-	ApprovalCondition string          `json:"approval_condition"`
-	CreatedBy         int64           `json:"created_by"`
-	CreatedAt         time.Time       `json:"created_at"`
+	ID            int64           `json:"id"`
+	GroupID       int64           `json:"group_id"`
+	Name          string          `json:"name"`
+	Payload       json.RawMessage `json:"payload"`
+	CommitMessage *string         `json:"commit_message"`
+	CreatedBy     int64           `json:"created_by"`
+	CreatedAt     time.Time       `json:"created_at"`
+}
+
+// GlobalValuesGroup is a named bundle of global values with its own version
+// sequence; each version snapshots every value in the group.
+type GlobalValuesGroup struct {
+	ID                int64     `json:"id"`
+	Name              string    `json:"name"`
+	ApprovalCondition string    `json:"approval_condition"`
+	CreatedBy         int64     `json:"created_by"`
+	CreatedAt         time.Time `json:"created_at"`
+}
+
+type GlobalValuesGroupVersion struct {
+	ID              int64     `json:"id"`
+	GroupID         int64     `json:"group_id"`
+	GroupName       string    `json:"group_name"`
+	VersionID       int       `json:"version_id"`
+	ParentVersionID *int64    `json:"parent_version_id"`
+	CommitMessage   *string   `json:"commit_message"`
+	CreatedBy       int64     `json:"created_by"`
+	CreatedAt       time.Time `json:"created_at"`
+	// Values is the materialized payload map for this group version: gv_name -> payload.
+	// Populated by handlers that read the version's full contents.
+	Values map[string]json.RawMessage `json:"values,omitempty"`
+}
+
+// ProjectVersion is a per-project snapshot covering all templates and all
+// environment values for the project at that point in time. Each commit
+// produces one new project version via copy-on-write.
+type ProjectVersion struct {
+	ID              int64     `json:"id"`
+	ProjectID       int64     `json:"project_id"`
+	VersionID       int       `json:"version_id"`
+	ParentVersionID *int64    `json:"parent_version_id"`
+	CommitMessage   *string   `json:"commit_message"`
+	IsAnchor        bool      `json:"is_anchor"`
+	CreatedBy       int64     `json:"created_by"`
+	CreatedAt       time.Time `json:"created_at"`
+}
+
+// ProjectVersionManifest lists what content rows a project version snapshots.
+type ProjectVersionManifest struct {
+	ProjectVersion
+	Templates []ProjectConfigTemplate `json:"templates"`
+	Values    []ProjectConfigValues   `json:"values"`
 }
 
 // Role is a global, named bundle of permission atoms. Its scope comes only from
@@ -119,21 +173,23 @@ type UserRole struct {
 }
 
 type PullRequest struct {
-	ID                int64        `json:"id"`
-	ProjectID         *int64       `json:"project_id"`
-	GlobalValuesName  *string      `json:"global_values_name"`
-	AuthorID          int64        `json:"author_id"`
-	Title             string       `json:"title"`
-	Description       *string      `json:"description"`
-	Status            string       `json:"status"`
-	IsConflicted      bool         `json:"is_conflicted"`
-	ApprovalCondition string       `json:"approval_condition"`
-	CreatedAt         time.Time    `json:"created_at"`
-	UpdatedAt         time.Time    `json:"updated_at"`
-	MergedAt          *time.Time   `json:"merged_at"`
-	ClosedAt          *time.Time   `json:"closed_at"`
-	Changes           []PRChange   `json:"changes,omitempty"`
-	Approvals         []PRApproval `json:"approvals,omitempty"`
+	ID                   int64        `json:"id"`
+	ProjectID            *int64       `json:"project_id"`
+	GlobalValuesName     *string      `json:"global_values_name"`
+	BaseProjectVersionID *int64       `json:"base_project_version_id"`
+	BaseGroupVersionID   *int64       `json:"base_group_version_id"`
+	AuthorID             int64        `json:"author_id"`
+	Title                string       `json:"title"`
+	Description          *string      `json:"description"`
+	Status               string       `json:"status"`
+	IsConflicted         bool         `json:"is_conflicted"`
+	ApprovalCondition    string       `json:"approval_condition"`
+	CreatedAt            time.Time    `json:"created_at"`
+	UpdatedAt            time.Time    `json:"updated_at"`
+	MergedAt             *time.Time   `json:"merged_at"`
+	ClosedAt             *time.Time   `json:"closed_at"`
+	Changes              []PRChange   `json:"changes,omitempty"`
+	Approvals            []PRApproval `json:"approvals,omitempty"`
 }
 
 type PRApproval struct {
@@ -153,34 +209,35 @@ type PRChange struct {
 	TemplateName     *string   `json:"template_name"`
 	EnvironmentName  *string   `json:"environment_name"`
 	GlobalValuesName *string   `json:"global_values_name"`
-	BaseVersionID    int       `json:"base_version_id"`
 	ProposedPayload  string    `json:"proposed_payload"`
 	CreatedAt        time.Time `json:"created_at"`
 }
 
 type Deployment struct {
-	ID             int64     `json:"id"`
-	ProjectID      int64     `json:"project_id"`
-	EnvironmentID  int64     `json:"environment_id"`
-	Status         string    `json:"status"`
-	RolledBackFrom *int64    `json:"rolled_back_from"`
-	CommitMessage  *string   `json:"commit_message"`
-	CreatedBy      int64     `json:"created_by"`
-	CreatedAt      time.Time `json:"created_at"`
+	ID               int64     `json:"id"`
+	ProjectID        int64     `json:"project_id"`
+	EnvironmentID    int64     `json:"environment_id"`
+	ProjectVersionID int64     `json:"project_version_id"`
+	Status           string    `json:"status"`
+	RolledBackFrom   *int64    `json:"rolled_back_from"`
+	CommitMessage    *string   `json:"commit_message"`
+	CreatedBy        int64     `json:"created_by"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 type DeploymentEntry struct {
-	ID                int64  `json:"id"`
-	DeploymentID      int64  `json:"deployment_id"`
-	TemplateName      string `json:"template_name"`
-	TemplateVersionID int    `json:"template_version_id"`
-	ValuesVersionID   int    `json:"values_version_id"`
-	RenderedOutput    string `json:"rendered_output"`
+	ID             int64  `json:"id"`
+	DeploymentID   int64  `json:"deployment_id"`
+	TemplateName   string `json:"template_name"`
+	RenderedOutput string `json:"rendered_output"`
 }
 
-type DeploymentEntryGlobalRef struct {
-	ID                    int64  `json:"id"`
-	DeploymentEntryID     int64  `json:"deployment_entry_id"`
-	GlobalValuesName      string `json:"global_values_name"`
-	GlobalValuesVersionID int    `json:"global_values_version_id"`
+// DeploymentGroupRef pins one global-values-group version per deployment.
+type DeploymentGroupRef struct {
+	ID             int64  `json:"id"`
+	DeploymentID   int64  `json:"deployment_id"`
+	GroupID        int64  `json:"group_id"`
+	GroupName      string `json:"group_name"`
+	GroupVersionID int64  `json:"group_version_id"`
+	VersionID      int    `json:"version_id"`
 }

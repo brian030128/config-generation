@@ -38,9 +38,9 @@ import JSZip from "jszip"
 import { saveAs } from "file-saver"
 import { cn } from "@/lib/utils"
 
-import { useProjects } from "@/hooks/use-projects"
+import { useProjects, useProjectVersions } from "@/hooks/use-projects"
 import { useEnvironments } from "@/hooks/use-environments"
-import { useTemplates, useTemplateVersions } from "@/hooks/use-templates"
+import { useTemplates } from "@/hooks/use-templates"
 import { useValues } from "@/hooks/use-values"
 import { useGlobalValueVersions } from "@/hooks/use-global-values"
 import {
@@ -57,11 +57,10 @@ import type {
 export default function DeployPage() {
   const [projectName, setProjectName] = useState("")
   const [envName, setEnvName] = useState("")
-  const [templateVersions, setTemplateVersions] = useState<
-    Record<string, number>
-  >({})
-  const [valuesVersionId, setValuesVersionId] = useState<number>(0)
-  const [gvVersions, setGvVersions] = useState<Record<string, number>>({})
+  // Single project version pin replaces the per-template + per-env version maps.
+  const [projectVersionId, setProjectVersionId] = useState<number>(0)
+  // Per-group version pin, keyed by group name.
+  const [gvGroupVersions, setGvGroupVersions] = useState<Record<string, number>>({})
   const [selectedTemplate, setSelectedTemplate] = useState("")
   const [commitMessage, setCommitMessage] = useState("")
   const [showConfirm, setShowConfirm] = useState(false)
@@ -72,6 +71,7 @@ export default function DeployPage() {
   const { data: envsData } = useEnvironments(projectName)
   const { data: templatesData } = useTemplates(projectName)
   const { data: valuesData, isLoading: valuesLoading } = useValues(projectName, envName)
+  const { data: projectVersionsData } = useProjectVersions(projectName)
   const { data: latestDeploy, error: latestDeployError } =
     useLatestDeployment(projectName, envName)
 
@@ -92,31 +92,24 @@ export default function DeployPage() {
     previewMutation.reset()
   }, [projectName])
 
-  // Initialize version defaults from last deployment or latest versions
+  // Initialize defaults from the last deployment or the project's latest version.
   useEffect(() => {
     if (!projectName || !envName || versionsInitialized) return
     if (templates.length === 0) return
     if (valuesLoading) return // wait for values query to complete
 
-    // Build default template versions (latest)
-    const defaultTmplVersions: Record<string, number> = {}
-    for (const t of templates) {
-      defaultTmplVersions[t.template_name] = t.version_id
-    }
-
-    const defaultValuesVersion = valuesData?.version_id ?? 0
+    const latestPV = projectVersionsData?.items?.find((v) => !v.is_anchor)
+    const defaultProjectVersionID = latestPV?.version_id ?? 0
 
     if (latestDeploy && !latestDeployError) {
-      // Use last deployment versions as defaults, falling back to latest for new templates
-      setTemplateVersions(mergeTemplateVersions(defaultTmplVersions, latestDeploy.template_versions))
-      setValuesVersionId(latestDeploy.values_version_id || defaultValuesVersion)
-      setGvVersions(latestDeploy.global_values_versions ?? {})
+      setProjectVersionId(latestDeploy.project_version_id || defaultProjectVersionID)
+      setGvGroupVersions(latestDeploy.global_values_group_versions ?? {})
     } else {
-      setTemplateVersions(defaultTmplVersions)
-      setValuesVersionId(defaultValuesVersion)
-      // Scan values payload for global value refs to determine defaults
+      setProjectVersionId(defaultProjectVersionID)
+      // Seed group versions from values payload references; the real numbers
+      // get resolved when the per-group version lists load below.
       if (valuesData?.payload) {
-        setGvVersions(gvVersionsFromValues(valuesData.payload))
+        setGvGroupVersions(gvVersionsFromValues(valuesData.payload))
       }
     }
     setVersionsInitialized(true)
@@ -129,30 +122,37 @@ export default function DeployPage() {
     templates,
     valuesData,
     valuesLoading,
+    projectVersionsData,
     latestDeploy,
     latestDeployError,
     versionsInitialized,
+    selectedTemplate,
   ])
 
-  // Trigger preview when versions are initialized and all resolved
-  const allGvResolved = Object.values(gvVersions).every((v) => v > 0) || Object.keys(gvVersions).length === 0
-  const canPreview = versionsInitialized && valuesVersionId > 0 && Object.keys(templateVersions).length > 0 && allGvResolved
+  // Trigger preview when the pinned inputs are all resolved.
+  const allGvResolved =
+    Object.values(gvGroupVersions).every((v) => v > 0) ||
+    Object.keys(gvGroupVersions).length === 0
+  const canPreview = versionsInitialized && projectVersionId > 0 && allGvResolved
 
+  // previewMutation is intentionally NOT in the deps: react-query returns a
+  // new mutation object whenever its internal state changes (pending → success),
+  // so including it would re-fire the auto-trigger effect after every preview
+  // and produce an infinite loop.
   const triggerPreview = useCallback(() => {
     if (!projectName || !envName || !canPreview) return
 
     previewMutation.mutate({
-      template_versions: templateVersions,
-      values_version_id: valuesVersionId,
-      global_values_versions: gvVersions,
+      project_version_id: projectVersionId,
+      global_values_group_versions: gvGroupVersions,
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     projectName,
     envName,
     canPreview,
-    templateVersions,
-    valuesVersionId,
-    gvVersions,
+    projectVersionId,
+    gvGroupVersions,
   ])
 
   // Auto-trigger preview whenever the pinned inputs change. triggerPreview is
@@ -165,9 +165,8 @@ export default function DeployPage() {
   const handleDeploy = () => {
     deployMutation.mutate(
       {
-        template_versions: templateVersions,
-        values_version_id: valuesVersionId,
-        global_values_versions: gvVersions,
+        project_version_id: projectVersionId,
+        global_values_group_versions: gvGroupVersions,
         commit_message: commitMessage || undefined,
       },
       {
@@ -295,12 +294,10 @@ export default function DeployPage() {
           {/* Version Pinning */}
           <VersionPinning
             projectName={projectName}
-            templates={templates}
-            templateVersions={templateVersions}
-            setTemplateVersions={setTemplateVersions}
-            valuesVersionId={valuesVersionId}
-            gvVersions={gvVersions}
-            setGvVersions={setGvVersions}
+            projectVersionId={projectVersionId}
+            setProjectVersionId={setProjectVersionId}
+            gvGroupVersions={gvGroupVersions}
+            setGvGroupVersions={setGvGroupVersions}
           />
 
           {previewMutation.isPending && (
@@ -359,7 +356,7 @@ export default function DeployPage() {
                     </h3>
                     <InputDiffSection
                       title={`Template: ${selectedResult.template_name}`}
-                      subtitle={`v${selectedResult.template_version_id}`}
+                      subtitle={`project v${preview.project_version_id}`}
                       hasChanges={
                         selectedResult.previous_template_body == null ||
                         selectedResult.template_body !==
@@ -369,7 +366,7 @@ export default function DeployPage() {
                       newText={selectedResult.template_body}
                     />
                     <InputDiffSection
-                      title={`Values (v${preview.values_version_id})`}
+                      title={`Values (project v${preview.project_version_id})`}
                       hasChanges={
                         preview.previous_values == null ||
                         JSON.stringify(preview.values_payload) !==
@@ -389,7 +386,7 @@ export default function DeployPage() {
                         return (
                           <InputDiffSection
                             key={name}
-                            title={`Global: ${name} (v${preview.global_values_versions[name]})`}
+                            title={`Global: ${name} (v${preview.global_values_group_versions[name]})`}
                             hasChanges={
                               prevPayload == null ||
                               JSON.stringify(payload) !==
@@ -572,22 +569,20 @@ function InputDiffSection({
 
 function VersionPinning({
   projectName,
-  templates,
-  templateVersions,
-  setTemplateVersions,
-  valuesVersionId,
-  gvVersions,
-  setGvVersions,
+  projectVersionId,
+  setProjectVersionId,
+  gvGroupVersions,
+  setGvGroupVersions,
 }: Readonly<{
   projectName: string
-  templates: { template_name: string; version_id: number }[]
-  templateVersions: Record<string, number>
-  setTemplateVersions: (v: Record<string, number>) => void
-  valuesVersionId: number
-  gvVersions: Record<string, number>
-  setGvVersions: (v: Record<string, number>) => void
+  projectVersionId: number
+  setProjectVersionId: (v: number) => void
+  gvGroupVersions: Record<string, number>
+  setGvGroupVersions: (v: Record<string, number>) => void
 }>) {
   const [expanded, setExpanded] = useState(false)
+  const { data: projectVersionsData } = useProjectVersions(projectName)
+  const versions = (projectVersionsData?.items ?? []).filter((v) => !v.is_anchor)
 
   return (
     <div className="rounded-lg border">
@@ -602,59 +597,51 @@ function VersionPinning({
         )}
         <span className="font-medium">Version Pinning</span>
         <span className="text-muted-foreground text-xs">
-          ({templates.length} templates, values v{valuesVersionId},{" "}
-          {Object.keys(gvVersions).length} global value groups)
+          (project v{projectVersionId}, {Object.keys(gvGroupVersions).length}{" "}
+          global value groups)
         </span>
       </button>
       {expanded && (
         <div className="border-t p-4 space-y-4">
-          {/* Template versions */}
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground uppercase tracking-wider">
-              Template Versions
+              Project Version
             </Label>
-            <div className="flex flex-wrap gap-3">
-              {templates.map((t) => (
-                <TemplateVersionSelect
-                  key={t.template_name}
-                  projectName={projectName}
-                  templateName={t.template_name}
-                  currentVersion={
-                    templateVersions[t.template_name] ?? t.version_id
-                  }
-                  onChange={(ver) =>
-                    setTemplateVersions({
-                      ...templateVersions,
-                      [t.template_name]: ver,
-                    })
-                  }
-                />
-              ))}
-            </div>
+            <Select
+              value={String(projectVersionId)}
+              onValueChange={(v) => setProjectVersionId(Number(v))}
+            >
+              <SelectTrigger className="w-[140px]" size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {versions.map((v) => (
+                  <SelectItem key={v.version_id} value={String(v.version_id)}>
+                    v{v.version_id}
+                  </SelectItem>
+                ))}
+                {versions.length === 0 && (
+                  <SelectItem value={String(projectVersionId)}>
+                    v{projectVersionId}
+                  </SelectItem>
+                )}
+              </SelectContent>
+            </Select>
           </div>
 
-          {/* Values version */}
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground uppercase tracking-wider">
-              Values Version
-            </Label>
-            <div className="text-sm">v{valuesVersionId}</div>
-          </div>
-
-          {/* Global value group versions */}
-          {Object.keys(gvVersions).length > 0 && (
+          {Object.keys(gvGroupVersions).length > 0 && (
             <div className="space-y-2">
               <Label className="text-xs text-muted-foreground uppercase tracking-wider">
                 Global Value Group Versions
               </Label>
               <div className="flex flex-wrap gap-3">
-                {Object.entries(gvVersions).map(([name, ver]) => (
+                {Object.entries(gvGroupVersions).map(([name, ver]) => (
                   <GvVersionSelect
                     key={name}
                     gvName={name}
                     currentVersion={ver}
                     onChange={(newVer) =>
-                      setGvVersions({ ...gvVersions, [name]: newVer })
+                      setGvGroupVersions({ ...gvGroupVersions, [name]: newVer })
                     }
                   />
                 ))}
@@ -663,47 +650,6 @@ function VersionPinning({
           )}
         </div>
       )}
-    </div>
-  )
-}
-
-function TemplateVersionSelect({
-  projectName,
-  templateName,
-  currentVersion,
-  onChange,
-}: Readonly<{
-  projectName: string
-  templateName: string
-  currentVersion: number
-  onChange: (ver: number) => void
-}>) {
-  const { data: versionsData } = useTemplateVersions(projectName, templateName)
-  const versions = versionsData?.items ?? []
-
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-sm">{templateName}:</span>
-      <Select
-        value={String(currentVersion)}
-        onValueChange={(v) => onChange(Number(v))}
-      >
-        <SelectTrigger className="w-[90px]" size="sm">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {versions.map((v) => (
-            <SelectItem key={v.version_id} value={String(v.version_id)}>
-              v{v.version_id}
-            </SelectItem>
-          ))}
-          {versions.length === 0 && (
-            <SelectItem value={String(currentVersion)}>
-              v{currentVersion}
-            </SelectItem>
-          )}
-        </SelectContent>
-      </Select>
     </div>
   )
 }
@@ -777,24 +723,9 @@ function hasTemplateChanges(result: TemplateRenderResult): boolean {
   return result.rendered_output !== result.previous_output
 }
 
-// mergeTemplateVersions overlays the versions from a prior deployment onto the
-// latest-version defaults, keeping latest for any template that no longer
-// appears in the historic deploy. Extracted from the version-init useEffect to
-// stay within Sonar's cognitive-complexity threshold.
-function mergeTemplateVersions(
-  defaults: Record<string, number>,
-  fromDeploy: Record<string, number>,
-): Record<string, number> {
-  const merged = { ...defaults }
-  for (const [name, ver] of Object.entries(fromDeploy)) {
-    if (name in merged) merged[name] = ver
-  }
-  return merged
-}
-
-// gvVersionsFromValues seeds a global-values-version map with 0s for every
-// global value referenced by the values payload. The real versions are
-// resolved later when the per-name version lists load.
+// gvVersionsFromValues seeds a group-version map with 0s for every global
+// value group referenced by the values payload. The real versions are resolved
+// later when the per-group version lists load.
 function gvVersionsFromValues(
   payload: Record<string, unknown>,
 ): Record<string, number> {
