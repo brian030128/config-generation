@@ -1,40 +1,61 @@
+<div align="center">
+
 # config-generation
 
-A web platform for generating environment-specific configuration files.  
-Projects define [Go template](https://pkg.go.dev/text/template) files and per-environment values; the system renders them on demand. Shared values (e.g. database credentials) are defined once as **Global Values** and referenced across multiple projects. Changes go through a **pull-request review flow** with configurable approval conditions before being applied.
+**Template-driven configuration management with PR-gated deployments**
 
-- **Backend** — Go (`backend/`)
-- **Frontend** — React + TypeScript (`frontend/`)
-- **Local dev** — `docker-compose.yml` (backend + frontend + Postgres)
+[![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)](https://golang.org)
+[![React](https://img.shields.io/badge/React-TypeScript-61DAFB?logo=react&logoColor=black)](https://react.dev)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose)
+[![ArgoCD](https://img.shields.io/badge/ArgoCD-GitOps-EF7B4D?logo=argo&logoColor=white)](https://argo-cd.readthedocs.io)
+
+</div>
+
+---
+
+Define [Go templates](https://pkg.go.dev/text/template), bind per-environment values, and let teams propose changes through a pull-request review flow before anything is applied.
+
+## Demo
+
+<video src="frontend/public/demo.mp4" controls width="100%"></video>
+
+## Features
+
+| | |
+|---|---|
+| **Go template rendering** | Write `.tmpl` files; values are filled per environment on demand |
+| **Global Values** | Define shared credentials once, reference them across all projects |
+| **PR review flow** | Changes require approval with configurable conditions per project |
+| **RBAC** | Role-based permissions with project-scoped membership |
+| **OIDC / local auth** | SSO via Dex or username/password login |
+
+## Quick Start
+
+```bash
+cp .env.example .env
+docker compose up
+```
+
+| Service | URL |
+|---|---|
+| Frontend | http://localhost:5173 |
+| Backend API | http://localhost:8080 |
 
 ## Continuous Delivery
 
-Every push to `main` triggers the **CD Build & Push** workflow (`.github/workflows/cd-build-push.yml`):
+Every push to `main` triggers the CD pipeline:
 
 ```
 push to main
-    │
-    ├─ Build & push Docker images → ghcr.io/brian030128/config-generation/{backend,frontend}:<commit-sha>
-    │
-    ├─ Staging  → commits updated image tags directly to
-    │             solar224/config-generation-gitops  charts/config-gen/values-staging.yaml
-    │             ArgoCD auto-syncs → staging.ycantech.com
-    │
-    └─ Production → opens a PR in the GitOps repo
-                    charts/config-gen/values-production.yaml
-                    A human merges the PR → ArgoCD auto-syncs → app.ycantech.com
+    ├─ Build & push → ghcr.io/brian030128/config-generation/{backend,frontend}:<sha>
+    ├─ Staging  → updates values-staging.yaml → ArgoCD auto-syncs → staging.ycantech.com
+    └─ Production → opens a PR against values-production.yaml → merge to deploy → app.ycantech.com
 ```
 
-Please remember
-```
-cp .env.example .env
-```
+> Infrastructure & Kubernetes manifests: [solar224/config-generation-gitops](https://github.com/solar224/config-generation-gitops)
 
-Infrastructure and Kubernetes manifests live in the GitOps repository:  
-**[solar224/config-generation-gitops](https://github.com/solar224/config-generation-gitops)**
-
-### Required secrets (in this repo's GitHub Actions settings)
+### Required GitHub Secrets
 
 | Secret | Purpose |
-|--------|---------|
-| `GITOPS_TOKEN` | PAT with `contents: write` on the GitOps repo (to push tag updates and open PRs) |
+|---|---|
+| `GITOPS_TOKEN` | PAT with `contents:write` on the GitOps repo |
