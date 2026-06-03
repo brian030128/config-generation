@@ -108,8 +108,12 @@ export default function DeployPage() {
     if (templates.length === 0) return
     if (valuesLoading) return // wait for values query to complete
 
+    // project_version_id sent to the API is the global project_versions.id,
+    // NOT the per-project sequential version_id. The deployed path below uses
+    // latestDeploy.project_version_id (already the global id); this fallback
+    // must do the same or the preview 404s with "project version not found".
     const latestPV = projectVersionsData?.items?.find((v) => !v.is_anchor)
-    const defaultProjectVersionID = latestPV?.version_id ?? 0
+    const defaultProjectVersionID = latestPV?.id ?? 0
 
     if (latestDeploy && !latestDeployError) {
       setProjectVersionId(latestDeploy.project_version_id || defaultProjectVersionID)
@@ -619,6 +623,9 @@ function VersionPinning({
   const [expanded, setExpanded] = useState(false)
   const { data: projectVersionsData } = useProjectVersions(projectName)
   const versions = (projectVersionsData?.items ?? []).filter((v) => !v.is_anchor)
+  // projectVersionId holds the global project_versions.id; map it back to the
+  // per-project version_id only for display.
+  const selectedVersion = versions.find((v) => v.id === projectVersionId)
 
   return (
     <div className="rounded-lg border">
@@ -633,8 +640,8 @@ function VersionPinning({
         )}
         <span className="font-medium">Version Pinning</span>
         <span className="text-muted-foreground text-xs">
-          (project v{projectVersionId}, {Object.keys(gvGroupVersions).length}{" "}
-          global value groups)
+          (project v{selectedVersion?.version_id ?? "?"},{" "}
+          {Object.keys(gvGroupVersions).length} global value groups)
         </span>
       </button>
       {expanded && (
@@ -652,13 +659,13 @@ function VersionPinning({
               </SelectTrigger>
               <SelectContent>
                 {versions.map((v) => (
-                  <SelectItem key={v.version_id} value={String(v.version_id)}>
+                  <SelectItem key={v.id} value={String(v.id)}>
                     v{v.version_id}
                   </SelectItem>
                 ))}
                 {versions.length === 0 && (
                   <SelectItem value={String(projectVersionId)}>
-                    v{projectVersionId}
+                    v{selectedVersion?.version_id ?? "?"}
                   </SelectItem>
                 )}
               </SelectContent>
