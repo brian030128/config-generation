@@ -382,6 +382,14 @@ export interface TemplateRenderResult {
   previous_template_body?: string
 }
 
+// The last successful deployment a preview diffs against; absent when the
+// project+env has never been deployed.
+export interface PreviousDeploymentInfo {
+  deployment_id: number
+  project_version: number
+  created_at: string
+}
+
 export interface DeployPreviewResponse {
   results: TemplateRenderResult[]
   values_payload: Record<string, unknown>
@@ -391,6 +399,7 @@ export interface DeployPreviewResponse {
   previous_global_values?: Record<string, Record<string, unknown>>
   global_values_group_versions: Record<string, number>
   has_errors: boolean
+  previous_deployment?: PreviousDeploymentInfo
 }
 
 export interface DeployResponse {

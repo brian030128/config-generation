@@ -3,7 +3,10 @@ import { diffLines } from "diff"
 import { cn } from "@/lib/utils"
 
 interface DiffViewerProps {
-  oldText: string
+  // Absent (undefined) means there is no baseline to diff against — the whole
+  // file is rendered as plain context instead of an all-additions diff. An
+  // empty string is a real (empty) baseline and still diffs.
+  oldText?: string
   newText: string
   className?: string
 }
@@ -21,8 +24,47 @@ function lineMarker(type: DiffLine["type"]): string {
   return " "
 }
 
+function DiffHeader({
+  noBaseline,
+  unchanged,
+  additions,
+  deletions,
+}: Readonly<{
+  noBaseline: boolean
+  unchanged: boolean
+  additions: number
+  deletions: number
+}>) {
+  if (noBaseline) {
+    return <span className="italic">No previous deployment — full output</span>
+  }
+  if (unchanged) {
+    return <span className="italic">Unchanged</span>
+  }
+  return (
+    <>
+      <span className="text-green-400">+{additions}</span>
+      <span className="text-red-400">-{deletions}</span>
+    </>
+  )
+}
+
 export function DiffViewer({ oldText, newText, className }: Readonly<DiffViewerProps>) {
+  const noBaseline = oldText === undefined
+
   const { lines, additions, deletions } = useMemo(() => {
+    if (oldText === undefined) {
+      // No baseline: show the whole file as plain context (no +/- markers).
+      const plain = newText.split("\n")
+      if (plain.at(-1) === "") plain.pop()
+      const plainLines: DiffLine[] = plain.map((content, i) => ({
+        type: "context",
+        content,
+        newLineNo: i + 1,
+      }))
+      return { lines: plainLines, additions: 0, deletions: 0 }
+    }
+
     const parts = diffLines(oldText, newText)
     const result: DiffLine[] = []
     let oldLine = 1
@@ -54,19 +96,17 @@ export function DiffViewer({ oldText, newText, className }: Readonly<DiffViewerP
     return { lines: result, additions: adds, deletions: dels }
   }, [oldText, newText])
 
-  const unchanged = additions === 0 && deletions === 0
+  const unchanged = !noBaseline && additions === 0 && deletions === 0
 
   return (
     <div className={cn("text-sm font-mono", className)}>
       <div className="px-3 py-1.5 text-xs text-muted-foreground border-b bg-muted/30 flex items-center gap-3">
-        {unchanged ? (
-          <span className="italic">Unchanged</span>
-        ) : (
-          <>
-            <span className="text-green-400">+{additions}</span>
-            <span className="text-red-400">-{deletions}</span>
-          </>
-        )}
+        <DiffHeader
+          noBaseline={noBaseline}
+          unchanged={unchanged}
+          additions={additions}
+          deletions={deletions}
+        />
       </div>
       <pre className="overflow-x-auto p-0 m-0">
         {lines.map((line, i) => (

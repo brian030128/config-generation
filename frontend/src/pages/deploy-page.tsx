@@ -52,6 +52,7 @@ import { DiffViewer } from "@/components/deploy/diff-viewer"
 import type {
   DeployPreviewResponse,
   TemplateRenderResult,
+  PreviousDeploymentInfo,
 } from "@/api/types"
 
 export default function DeployPage() {
@@ -351,9 +352,12 @@ export default function DeployPage() {
                 <div className="grid grid-cols-2 gap-4 min-h-[400px]">
                   {/* Left pane: Inputs */}
                   <div className="space-y-3 overflow-auto">
-                    <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                      Source
-                    </h3>
+                    <div>
+                      <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                        Source
+                      </h3>
+                      <BaselineLabel info={preview.previous_deployment} />
+                    </div>
                     <InputDiffSection
                       title={`Template: ${selectedResult.template_name}`}
                       subtitle={`project v${preview.project_version_id}`}
@@ -406,9 +410,12 @@ export default function DeployPage() {
 
                   {/* Right pane: Rendered output */}
                   <div className="space-y-3 overflow-auto">
-                    <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                      Rendered Output
-                    </h3>
+                    <div>
+                      <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                        Rendered Output
+                      </h3>
+                      <BaselineLabel info={preview.previous_deployment} />
+                    </div>
                     {(() => {
                       if (selectedResult.error) {
                         return (
@@ -432,7 +439,7 @@ export default function DeployPage() {
                         return (
                       <div className="rounded-lg border overflow-hidden">
                         <DiffViewer
-                          oldText={selectedResult.previous_output ?? ""}
+                          oldText={selectedResult.previous_output}
                           newText={selectedResult.rendered_output}
                         />
                       </div>
@@ -518,6 +525,25 @@ export default function DeployPage() {
 
 // --- Sub-components ---
 
+// BaselineLabel names the deployment a diff is compared against, or notes when
+// the project+env has never been deployed (so the panes show full output).
+function BaselineLabel({ info }: Readonly<{ info?: PreviousDeploymentInfo }>) {
+  if (!info) {
+    return (
+      <p className="text-xs text-muted-foreground italic">
+        No previous deployment
+      </p>
+    )
+  }
+  return (
+    <p className="text-xs text-muted-foreground">
+      vs deployment #{info.deployment_id} ·{" "}
+      {new Date(info.created_at).toLocaleDateString()} · project v
+      {info.project_version}
+    </p>
+  )
+}
+
 function InputDiffSection({
   title,
   subtitle,
@@ -560,7 +586,7 @@ function InputDiffSection({
       </button>
       {expanded && (
         <div className="border-t">
-          <DiffViewer oldText={oldText ?? ""} newText={newText} />
+          <DiffViewer oldText={oldText} newText={newText} />
         </div>
       )}
     </div>

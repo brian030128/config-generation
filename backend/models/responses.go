@@ -1,6 +1,9 @@
 package models
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"time"
+)
 
 type ListResponse[T any] struct {
 	Items []T `json:"items"`
@@ -139,6 +142,17 @@ type DeployPreviewResponse struct {
 	PreviousGlobalValues map[string]json.RawMessage `json:"previous_global_values,omitempty"`
 	GroupVersions        map[string]int             `json:"global_values_group_versions"`
 	HasErrors            bool                       `json:"has_errors"`
+	// PreviousDeployment identifies the last successful deployment the preview
+	// diffs against, or is nil when this project+env has never been deployed.
+	PreviousDeployment *PreviousDeploymentInfo `json:"previous_deployment,omitempty"`
+}
+
+// PreviousDeploymentInfo is the baseline a deploy preview compares against,
+// surfaced so the UI can label the diff ("vs deployment #N").
+type PreviousDeploymentInfo struct {
+	DeploymentID   int64     `json:"deployment_id"`
+	ProjectVersion int       `json:"project_version"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 type DeployResponse struct {

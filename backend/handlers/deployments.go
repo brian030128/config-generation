@@ -45,7 +45,7 @@ func (h *DeploymentHandler) Preview(w http.ResponseWriter, r *http.Request) {
 
 	renderResults := services.RenderAll(templates, valuesPayload, gvMap)
 
-	prevTemplates, prevValues, prevGlobalValues := h.fetchLastDeploymentBaseline(r, projectID, envID)
+	prevTemplates, prevValues, prevGlobalValues, prevDeployment := h.fetchLastDeploymentBaseline(r, projectID, envID)
 
 	hasErrors := false
 	results := make([]models.TemplateRenderResult, len(renderResults))
@@ -78,6 +78,7 @@ func (h *DeploymentHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		PreviousGlobalValues: prevGlobalValues,
 		GroupVersions:        req.GroupVersionIDsRaw,
 		HasErrors:            hasErrors,
+		PreviousDeployment:   prevDeployment,
 	})
 }
 
@@ -408,16 +409,20 @@ type prevTemplateData struct {
 	TemplateBody   *string
 }
 
-func (h *DeploymentHandler) fetchLastDeploymentBaseline(r *http.Request, projectID, envID int64) (map[string]*prevTemplateData, *json.RawMessage, map[string]json.RawMessage) {
+func (h *DeploymentHandler) fetchLastDeploymentBaseline(r *http.Request, projectID, envID int64) (map[string]*prevTemplateData, *json.RawMessage, map[string]json.RawMessage, *models.PreviousDeploymentInfo) {
 	var depID, prevPVID int64
+	info := &models.PreviousDeploymentInfo{}
 	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT id, project_version_id FROM deployments
-		WHERE project_id = $1 AND environment_id = $2 AND status = 'succeeded'
-		ORDER BY created_at DESC LIMIT 1
-	`, projectID, envID).Scan(&depID, &prevPVID)
+		SELECT d.id, d.project_version_id, d.created_at, pv.version_id
+		FROM deployments d
+		JOIN project_versions pv ON pv.id = d.project_version_id
+		WHERE d.project_id = $1 AND d.environment_id = $2 AND d.status = 'succeeded'
+		ORDER BY d.created_at DESC LIMIT 1
+	`, projectID, envID).Scan(&depID, &prevPVID, &info.CreatedAt, &info.ProjectVersion)
 	if err != nil {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
+	info.DeploymentID = depID
 
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT de.template_name, de.rendered_output, t.body
@@ -427,7 +432,7 @@ func (h *DeploymentHandler) fetchLastDeploymentBaseline(r *http.Request, project
 		WHERE de.deployment_id = $1
 	`, depID, prevPVID)
 	if err != nil {
-		return nil, nil, nil
+		return nil, nil, nil, info
 	}
 	defer rows.Close()
 
@@ -461,7 +466,7 @@ func (h *DeploymentHandler) fetchLastDeploymentBaseline(r *http.Request, project
 		WHERE dgr.deployment_id = $1
 	`, depID)
 	if err != nil {
-		return prevTemplates, prevValues, nil
+		return prevTemplates, prevValues, nil, info
 	}
 	defer gvRows.Close()
 
@@ -485,5 +490,5 @@ func (h *DeploymentHandler) fetchLastDeploymentBaseline(r *http.Request, project
 		}
 	}
 
-	return prevTemplates, prevValues, prevGlobalValues
+	return prevTemplates, prevValues, prevGlobalValues, info
 }
