@@ -65,7 +65,11 @@ export default function DeployPage() {
   const [selectedTemplate, setSelectedTemplate] = useState("")
   const [commitMessage, setCommitMessage] = useState("")
   const [showConfirm, setShowConfirm] = useState(false)
-  const [versionsInitialized, setVersionsInitialized] = useState(false)
+  // Tracks the exact project+env the version pins were initialized for. Derived
+  // comparison (below) means a project/env switch flips `versionsInitialized`
+  // false in the SAME render — before the auto-trigger effect can fire a preview
+  // with stale, mismatched pins.
+  const [initializedKey, setInitializedKey] = useState("")
 
   // Data queries
   const { data: projectsData } = useProjects()
@@ -85,10 +89,15 @@ export default function DeployPage() {
   const templates = templatesData?.items ?? []
   const preview = previewMutation.data as DeployPreviewResponse | undefined
 
+  // True only when the pins were initialized for the currently selected
+  // project+env. Computed during render so it cannot lag behind a selection
+  // change the way an effect-set boolean would.
+  const currentKey = projectName && envName ? `${projectName}/${envName}` : ""
+  const versionsInitialized = currentKey !== "" && initializedKey === currentKey
+
   // Reset env when project changes
   useEffect(() => {
     setEnvName("")
-    setVersionsInitialized(false)
     setSelectedTemplate("")
     previewMutation.reset()
   }, [projectName])
@@ -113,7 +122,7 @@ export default function DeployPage() {
         setGvGroupVersions(gvVersionsFromValues(valuesData.payload))
       }
     }
-    setVersionsInitialized(true)
+    setInitializedKey(currentKey)
     if (!selectedTemplate && templates.length > 0) {
       setSelectedTemplate(templates[0].template_name)
     }
@@ -126,6 +135,7 @@ export default function DeployPage() {
     projectVersionsData,
     latestDeploy,
     latestDeployError,
+    currentKey,
     versionsInitialized,
     selectedTemplate,
   ])
@@ -188,7 +198,7 @@ export default function DeployPage() {
           setShowConfirm(false)
           setCommitMessage("")
           // Re-trigger preview to refresh diffs
-          setVersionsInitialized(false)
+          setInitializedKey("")
         },
         onError: (err: unknown) => {
           const message =
@@ -238,7 +248,7 @@ export default function DeployPage() {
             value={envName}
             onValueChange={(v) => {
               setEnvName(v)
-              setVersionsInitialized(false)
+              setInitializedKey("")
               previewMutation.reset()
             }}
             disabled={!projectName}
