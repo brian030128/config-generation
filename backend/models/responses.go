@@ -71,11 +71,11 @@ type TemplateVariable struct {
 // `operation` is the staged operation (create|update|delete) when staged.
 
 type WorkspaceTemplateItem struct {
-	TemplateName    string `json:"template_name"`
-	Body            string `json:"body"`
-	BaseProjectVID  int    `json:"base_project_version_id"` // latest project version this template is in; 0 if new in the workspace
-	Staged          bool   `json:"staged"`
-	Operation       string `json:"operation,omitempty"`
+	TemplateName   string `json:"template_name"`
+	Body           string `json:"body"`
+	BaseProjectVID int    `json:"base_project_version_id"` // latest project version this template is in; 0 if new in the workspace
+	Staged         bool   `json:"staged"`
+	Operation      string `json:"operation,omitempty"`
 }
 
 type WorkspaceEnvironmentItem struct {

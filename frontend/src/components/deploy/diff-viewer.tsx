@@ -54,19 +54,19 @@ export function DiffViewer({ oldText, newText, className }: Readonly<DiffViewerP
     return { lines: result, additions: adds, deletions: dels }
   }, [oldText, newText])
 
-  if (additions === 0 && deletions === 0) {
-    return (
-      <div className={cn("text-sm text-muted-foreground italic p-3", className)}>
-        No changes
-      </div>
-    )
-  }
+  const unchanged = additions === 0 && deletions === 0
 
   return (
     <div className={cn("text-sm font-mono", className)}>
       <div className="px-3 py-1.5 text-xs text-muted-foreground border-b bg-muted/30 flex items-center gap-3">
-        <span className="text-green-400">+{additions}</span>
-        <span className="text-red-400">-{deletions}</span>
+        {unchanged ? (
+          <span className="italic">Unchanged</span>
+        ) : (
+          <>
+            <span className="text-green-400">+{additions}</span>
+            <span className="text-red-400">-{deletions}</span>
+          </>
+        )}
       </div>
       <pre className="overflow-x-auto p-0 m-0">
         {lines.map((line, i) => (

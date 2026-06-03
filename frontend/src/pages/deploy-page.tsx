@@ -352,7 +352,7 @@ export default function DeployPage() {
                   {/* Left pane: Inputs */}
                   <div className="space-y-3 overflow-auto">
                     <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                      Inputs
+                      Source
                     </h3>
                     <InputDiffSection
                       title={`Template: ${selectedResult.template_name}`}

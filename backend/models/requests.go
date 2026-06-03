@@ -134,12 +134,12 @@ type SubmitDraftRequest struct {
 // DeployPreviewRequest / DeployRequest pin a single project version plus,
 // for each referenced global-values group, the group version to use.
 type DeployPreviewRequest struct {
-	ProjectVersionID   int64           `json:"project_version_id"`
-	GroupVersionIDsRaw map[string]int  `json:"global_values_group_versions"` // group name -> group version ordinal
+	ProjectVersionID   int64          `json:"project_version_id"`
+	GroupVersionIDsRaw map[string]int `json:"global_values_group_versions"` // group name -> group version ordinal
 }
 
 type DeployRequest struct {
-	ProjectVersionID   int64           `json:"project_version_id"`
-	GroupVersionIDsRaw map[string]int  `json:"global_values_group_versions"`
-	CommitMessage      *string         `json:"commit_message"`
+	ProjectVersionID   int64          `json:"project_version_id"`
+	GroupVersionIDsRaw map[string]int `json:"global_values_group_versions"`
+	CommitMessage      *string        `json:"commit_message"`
 }
