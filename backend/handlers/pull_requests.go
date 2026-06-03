@@ -939,20 +939,31 @@ func markPRMerged(ctx context.Context, tx *sql.Tx, prID int64, pr *models.PullRe
 	)
 }
 
-// autoCloseSiblingPRs closes any other unmerged PR targeting the same global
-// values scope so the just-merged PR's changes become canonical.
+// autoCloseSiblingPRs closes any other unmerged PR/workspace targeting the same
+// scope (project or global-values name) so the just-merged PR's changes become
+// canonical and stale workspaces are invalidated.
 func autoCloseSiblingPRs(ctx context.Context, tx *sql.Tx, pr models.PullRequest, prID int64) error {
-	if pr.GlobalValuesName == nil {
-		return nil
+	switch {
+	case pr.GlobalValuesName != nil:
+		_, err := tx.ExecContext(ctx, `
+			UPDATE pull_requests
+			SET status = 'closed', closed_at = NOW(), updated_at = NOW()
+			WHERE global_values_name = $1
+			  AND id != $2
+			  AND status IN ('draft', 'open', 'approved')
+		`, *pr.GlobalValuesName, prID)
+		return err
+	case pr.ProjectID != nil:
+		_, err := tx.ExecContext(ctx, `
+			UPDATE pull_requests
+			SET status = 'closed', closed_at = NOW(), updated_at = NOW()
+			WHERE project_id = $1
+			  AND id != $2
+			  AND status IN ('draft', 'open', 'approved')
+		`, *pr.ProjectID, prID)
+		return err
 	}
-	_, err := tx.ExecContext(ctx, `
-		UPDATE pull_requests
-		SET status = 'closed', closed_at = NOW(), updated_at = NOW()
-		WHERE global_values_name = $1
-		  AND id != $2
-		  AND status IN ('draft', 'open', 'approved')
-	`, *pr.GlobalValuesName, prID)
-	return err
+	return nil
 }
 
 func (h *PullRequestHandler) Merge(w http.ResponseWriter, r *http.Request) {
