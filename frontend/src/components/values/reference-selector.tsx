@@ -12,6 +12,9 @@ interface ReferenceSelectorProps {
   keyName: string
   onGroupChange: (group: string) => void
   onKeyChange: (key: string) => void
+  // When set, only global-value keys of the matching type are offered: a "list"
+  // variable can reference list-typed keys, a "string" variable only scalars.
+  valueKind?: "string" | "list"
 }
 
 export function ReferenceSelector({
@@ -19,6 +22,7 @@ export function ReferenceSelector({
   keyName,
   onGroupChange,
   onKeyChange,
+  valueKind,
 }: Readonly<ReferenceSelectorProps>) {
   const { data: gvList } = useGlobalValues()
   const { data: gvDetail } = useGlobalValue(group)
@@ -26,15 +30,18 @@ export function ReferenceSelector({
   const groups = gvList?.items ?? []
   // Keys for the picker are the union of keys across every value entry in the
   // group's latest version — the flat merge that renderers do at lookup time.
-  const keys = gvDetail
-    ? Array.from(
-        new Set(
-          Object.values(gvDetail.latest_version.values ?? {}).flatMap(
-            (payload) => Object.keys(payload ?? {}),
-          ),
-        ),
-      )
-    : []
+  // Track whether each key is a list (array) so the picker can filter by the
+  // referencing variable's type.
+  const keyIsList = new Map<string, boolean>()
+  for (const payload of Object.values(gvDetail?.latest_version.values ?? {})) {
+    for (const [k, v] of Object.entries(payload ?? {})) {
+      if (!keyIsList.has(k)) keyIsList.set(k, Array.isArray(v))
+    }
+  }
+  let keys = Array.from(keyIsList.keys())
+  if (valueKind) {
+    keys = keys.filter((k) => keyIsList.get(k) === (valueKind === "list"))
+  }
 
   return (
     <div className="flex gap-2">

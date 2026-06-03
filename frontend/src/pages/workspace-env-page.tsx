@@ -346,6 +346,7 @@ function renderValueCell({
       <ReferenceSelector
         group={ref.group}
         keyName={ref.key}
+        valueKind={isList ? "list" : "string"}
         onGroupChange={(g) => {
           setRefState((prev) => ({ ...prev, [v.name]: { group: g, key: "" } }))
           handleChange(v.name, "")
