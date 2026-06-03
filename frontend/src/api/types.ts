@@ -320,6 +320,10 @@ export interface PRChange {
 export interface TemplateVariable {
   name: string
   default?: string
+  // How the variable is used in the template: "string" for a plain reference,
+  // "list" when it is the target of a {{range}}, "conflict" when used both ways.
+  // Older backends may omit this; treat a missing kind as "string".
+  kind?: "string" | "list" | "conflict"
 }
 
 export interface TemplateVariablesResponse {

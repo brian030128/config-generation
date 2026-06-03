@@ -154,6 +154,78 @@ another: 42`)
 		})
 	})
 
+	Context("range targets are reported as list variables", func() {
+		BeforeEach(func() {
+			createTemplate(aliceID, "alice", "my-service", "app.yaml",
+				`hosts:
+{{- range .allowed_hosts }}
+  - {{ . }}
+{{- end }}
+region: {{ .region }}`)
+		})
+
+		It("marks the ranged variable as a list and the rest as strings", func() {
+			rec := doRequest("GET", "/api/projects/my-service/templates/app.yaml/variables", nil, aliceID, "alice")
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			body := decode[map[string]any](rec)
+			vars := body["variables"].([]any)
+			Expect(vars).To(HaveLen(2))
+
+			hosts := vars[0].(map[string]any)
+			Expect(hosts["name"]).To(Equal("allowed_hosts"))
+			Expect(hosts["kind"]).To(Equal("list"))
+
+			region := vars[1].(map[string]any)
+			Expect(region["name"]).To(Equal("region"))
+			Expect(region["kind"]).To(Equal("string"))
+		})
+	})
+
+	Context("a variable used as both a list and a string", func() {
+		BeforeEach(func() {
+			createTemplate(aliceID, "alice", "my-service", "app.yaml",
+				`count: {{ .items }}
+{{- range .items }}
+  - {{ . }}
+{{- end }}`)
+		})
+
+		It("reports the variable kind as conflict", func() {
+			rec := doRequest("GET", "/api/projects/my-service/templates/app.yaml/variables", nil, aliceID, "alice")
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			body := decode[map[string]any](rec)
+			vars := body["variables"].([]any)
+			Expect(vars).To(HaveLen(1))
+			Expect(vars[0].(map[string]any)["name"]).To(Equal("items"))
+			Expect(vars[0].(map[string]any)["kind"]).To(Equal("conflict"))
+		})
+	})
+
+	Context("kinds disagree across templates in a project", func() {
+		BeforeEach(func() {
+			createTemplate(aliceID, "alice", "my-service", "a.yaml",
+				`{{- range .shared }}{{ . }}{{- end }}`)
+			createTemplate(aliceID, "alice", "my-service", "b.yaml",
+				`value: {{ .shared }}`)
+		})
+
+		It("reconciles the project-level kind to conflict", func() {
+			rec := doRequest("GET", "/api/projects/my-service/variables", nil, aliceID, "alice")
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			body := decode[map[string]any](rec)
+			vars := body["variables"].([]any)
+			var shared map[string]any
+			for _, v := range vars {
+				m := v.(map[string]any)
+				if m["name"] == "shared" {
+					shared = m
+				}
+			}
+			Expect(shared).NotTo(BeNil())
+			Expect(shared["kind"]).To(Equal("conflict"))
+		})
+	})
+
 	Context("error cases", func() {
 		It("returns 403 for nonexistent project (permission check)", func() {
 			rec := doRequest("GET", "/api/projects/nope/templates/app.yaml/variables", nil, aliceID, "alice")

@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Trash2 } from "lucide-react"
+import { ListItemsEditor } from "@/components/values/list-items-editor"
 
 interface KvEditorProps {
   name: string
@@ -19,17 +20,6 @@ interface KvEditorProps {
 }
 
 type Entry = [string, GlobalValueValue]
-
-// replaceAt / removeAt are module-scope list helpers used by handleItemChange
-// and handleRemoveItem; lifting them out keeps the setEntries callback nesting
-// from exceeding 4 levels (Sonar S2004).
-function replaceAt(items: string[], index: number, value: string): string[] {
-  return items.map((it, j) => (j === index ? value : it))
-}
-
-function removeAt(items: string[], index: number): string[] {
-  return items.filter((_, j) => j !== index)
-}
 
 export function KvEditor({ name, data, readOnly = false }: Readonly<KvEditorProps>) {
   const [entries, setEntries] = useState<Entry[]>([])
@@ -63,32 +53,8 @@ export function KvEditor({ name, data, readOnly = false }: Readonly<KvEditorProp
     )
   }
 
-  function handleItemChange(index: number, itemIndex: number, value: string) {
-    setEntries((prev) =>
-      prev.map((e, i) =>
-        i === index && Array.isArray(e[1])
-          ? [e[0], replaceAt(e[1], itemIndex, value)]
-          : e,
-      ),
-    )
-  }
-
-  function handleAddItem(index: number) {
-    setEntries((prev) =>
-      prev.map((e, i) =>
-        i === index && Array.isArray(e[1]) ? [e[0], [...e[1], ""]] : e,
-      ),
-    )
-  }
-
-  function handleRemoveItem(index: number, itemIndex: number) {
-    setEntries((prev) =>
-      prev.map((e, i) =>
-        i === index && Array.isArray(e[1])
-          ? [e[0], removeAt(e[1], itemIndex)]
-          : e,
-      ),
-    )
+  function handleListChange(index: number, items: string[]) {
+    setEntries((prev) => prev.map((e, i) => (i === index ? [e[0], items] : e)))
   }
 
   function handleDelete(index: number) {
@@ -171,44 +137,11 @@ export function KvEditor({ name, data, readOnly = false }: Readonly<KvEditorProp
               </SelectContent>
             </Select>
             {Array.isArray(val) ? (
-              <div className="space-y-1">
-                {val.map((item, itemIndex) => (
-                  // Same focus-stability reason as the outer row key. NOSONAR
-                  <div key={itemIndex} className="flex items-center gap-2"> {/* NOSONAR */}
-                    <Input
-                      value={item}
-                      onChange={(e) =>
-                        handleItemChange(index, itemIndex, e.target.value)
-                      }
-                      className="font-mono text-sm"
-                      disabled={readOnly}
-                    />
-                    {!readOnly && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
-                        onClick={() => handleRemoveItem(index, itemIndex)}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    )}
-                  </div>
-                ))}
-                {val.length === 0 && (
-                  <p className="text-xs text-muted-foreground">Empty list.</p>
-                )}
-                {!readOnly && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-xs"
-                    onClick={() => handleAddItem(index)}
-                  >
-                    + Add item
-                  </Button>
-                )}
-              </div>
+              <ListItemsEditor
+                items={val}
+                onChange={(items) => handleListChange(index, items)}
+                readOnly={readOnly}
+              />
             ) : (
               <Input
                 value={String(val ?? "")}

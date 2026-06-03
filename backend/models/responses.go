@@ -64,6 +64,12 @@ type AuthConfigResponse struct {
 type TemplateVariable struct {
 	Name    string  `json:"name"`
 	Default *string `json:"default,omitempty"`
+	// Kind is how the variable is used in the template body: "string" for a
+	// plain field reference, "list" when it is the target of a {{range}}, and
+	// "conflict" when the same name is used both ways (in one template or
+	// across the project's templates). The env-values UI renders a list editor
+	// for "list" and surfaces an error for "conflict".
+	Kind string `json:"kind"`
 }
 
 // Workspace overlay views: the published base merged with the caller's own
