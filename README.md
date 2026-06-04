@@ -17,7 +17,7 @@ Define [Go templates](https://pkg.go.dev/text/template), bind per-environment va
 
 ## Demo
 
-<video src="https://github.com/user-attachments/assets/60f745d5-e1a8-4513-b868-545bbfb933e5" controls width="100%"></video>
+https://github.com/user-attachments/assets/60f745d5-e1a8-4513-b868-545bbfb933e5
 
 ## Features
 
