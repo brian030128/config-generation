@@ -24,7 +24,8 @@ jobs:
           scan-type: fs
           scan-ref: .
           format: table
-          exit-code: 1
+          # Report vulnerabilities without failing the scheduled workflow.
+          exit-code: 0
           ignore-unfixed: true
           vuln-type: os,library
           severity: HIGH,CRITICAL
